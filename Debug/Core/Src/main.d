@@ -39,7 +39,11 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
  ../Core/Inc/LCD/ssd1315.h ../Core/Inc/LCD/menu_helper.h \
  ../Core/Inc/Drivers/gy6500.h ../Core/Inc/Drivers/gy273.h \
  ../Core/Inc/Drivers/pca9685.h ../Core/Inc/Drivers/cc1101.h \
- ../Core/Inc/Drivers/i2c_helper.h
+ ../Core/Inc/Drivers/i2c_helper.h \
+ ../Core/Inc/Drivers/DX-LR30_Driver/sx126x.h \
+ ../Core/Inc/Drivers/DX-LR30_Driver/driver_DIO1.h \
+ ../Core/Inc/Drivers/DX-LR30_Driver/UserConfig.h \
+ ../Core/Inc/Drivers/DX-LR30_Driver/sx126x.h
 ../Core/Inc/main.h:
 ../Drivers/STM32F4xx_HAL_Driver/Inc/stm32f4xx_hal.h:
 ../Core/Inc/stm32f4xx_hal_conf.h:
@@ -90,3 +94,7 @@ Core/Src/main.o: ../Core/Src/main.c ../Core/Inc/main.h \
 ../Core/Inc/Drivers/pca9685.h:
 ../Core/Inc/Drivers/cc1101.h:
 ../Core/Inc/Drivers/i2c_helper.h:
+../Core/Inc/Drivers/DX-LR30_Driver/sx126x.h:
+../Core/Inc/Drivers/DX-LR30_Driver/driver_DIO1.h:
+../Core/Inc/Drivers/DX-LR30_Driver/UserConfig.h:
+../Core/Inc/Drivers/DX-LR30_Driver/sx126x.h:

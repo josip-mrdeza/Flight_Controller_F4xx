@@ -34,6 +34,10 @@
 #include "Drivers/pca9685.h"
 #include "Drivers/cc1101.h"
 #include "Drivers/i2c_helper.h"
+#include "Drivers/DX-LR30_Driver/sx126x.h"
+#include "Drivers/DX-LR30_Driver/driver_DIO1.h"
+#include "Drivers/DX-LR30_Driver/UserConfig.h"
+
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -72,6 +76,7 @@ char buff[24];
 float heading_3d;
 float heading_2d;
 Orientation_t ori;
+uint8_t flag_transmit = 0;
 volatile _Bool packet_received = false;
 /* USER CODE END PV */
 
@@ -85,9 +90,9 @@ void SystemClock_Config(void);
 /* USER CODE BEGIN 0 */
 void init_all()
 {
-	Menu_Init(&guiData);
+	Menu_Init(&hi2c3, &guiData, &imu_data, &ori);
 	SSD1315_Init(&hi2c3);
-	Menu_Draw(&hi2c3, &guiData, NULL, NULL);
+	Menu_Draw();
 	sprintf(buff, "Initializing...");
 	SSD1315_Line_1(buff);
 	SSD1315_UpdateScreen(&hi2c3);
@@ -112,7 +117,7 @@ void init_all()
 		sprintf(buff, "Init GY273: OK");
 		SSD1315_Line_3(buff);
 	}
-	Menu_Draw(&hi2c3, &guiData, NULL, NULL);
+	Menu_Draw();
 	// 1. Calibrate GY-6500 (KEEP BOARD TOTALLY STILL & FLAT!)
 	sprintf(buff, "Calib GY6500: ...");
 	SSD1315_Line_1(buff);
@@ -141,8 +146,9 @@ void init_all()
 	}
 	HAL_Delay(status_pca == 1 ? 0 : 3000);
 	HAL_TIM_Base_Start_IT(&htim2);
+	HAL_TIM_Base_Start_IT(&htim3);
 	SSD1315_UpdateScreen(&hi2c3);
-	Menu_Draw(&hi2c3, &guiData, NULL, NULL);
+	Menu_Draw();
 	sprintf(buff, "Init CC1101: ...");
 	SSD1315_Line_1(buff);
 	SSD1315_UpdateScreen(&hi2c3);
@@ -153,25 +159,41 @@ void init_all()
 	cc1101.gdo0_pin  = GPIO_PIN_3;
 	cc1101.gdo2_port = GPIOB; // Optional depending on your needs
 	cc1101.gdo2_pin  = GPIO_PIN_4;       // Optional depending on your needs
-	int cc1101_status = 1;
+	int radio_status = 1;
 	char buff[24];
-	for(uint8_t i = 1; i < 10 && cc1101_status != HAL_OK; i++)
+	for(uint8_t i = 1; i < 2 && radio_status != HAL_OK; i++)
 	{
 		sprintf(buff, "[CC1101 - AT:%d]", i);
 		SSD1315_Title(buff);
-		cc1101_status = CC1101_Init(&cc1101);
-		sprintf(buff, "Init CC1101: %s", cc1101_status == HAL_OK ? "Ok" : "Fail");
+		radio_status = CC1101_Init(&cc1101);
+		sprintf(buff, "Init CC1101: %s", radio_status == HAL_OK ? "Ok" : "Fail");
 		SSD1315_Line_1(buff);
 		SSD1315_UpdateScreen(&hi2c3);
-		HAL_Delay(100);
+		HAL_Delay(50);
+		cc1101.initok = 1;
 	}
-	if(cc1101_status != HAL_OK)
+	if(radio_status != HAL_OK)
 	{
 		sprintf(buff, "Failed to init!");
 		SSD1315_Line_2(buff);
 		SSD1315_UpdateScreen(&hi2c3);
-		HAL_Delay(500);
+		HAL_Delay(200);
+		cc1101.initok = 0;
 	}
+	radio_status = 0;
+	Menu_Draw();
+	sprintf(buff, "[DX-LR30-900MHz - INIT]");
+	SSD1315_Title(buff);
+	sprintf(buff, "Init DX-LR30: ...");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+	LoraInit();
+	HAL_Delay(25);
+	radio_status = DX_LR30_Ping();
+	sprintf(buff, "Init DX-LR30: %s", radio_status ? "Ok" : "Fail");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+	HAL_Delay(200);
 }
 void Gyro_update_data()
 {
@@ -189,106 +211,120 @@ void Gyro_update_data()
 /* USER CODE END 0 */
 
 /**
- * @brief  The application entry point.
- * @retval int
- */
+  * @brief  The application entry point.
+  * @retval int
+  */
 int main(void)
 {
 
-	/* USER CODE BEGIN 1 */
+  /* USER CODE BEGIN 1 */
 
-	/* USER CODE END 1 */
+  /* USER CODE END 1 */
 
-	/* MCU Configuration--------------------------------------------------------*/
+  /* MCU Configuration--------------------------------------------------------*/
 
-	/* Reset of all peripherals, Initializes the Flash interface and the Systick. */
-	HAL_Init();
+  /* Reset of all peripherals, Initializes the Flash interface and the Systick. */
+  HAL_Init();
 
-	/* USER CODE BEGIN Init */
+  /* USER CODE BEGIN Init */
 
-	/* USER CODE END Init */
+  /* USER CODE END Init */
 
-	/* Configure the system clock */
-	SystemClock_Config();
+  /* Configure the system clock */
+  SystemClock_Config();
 
-	/* USER CODE BEGIN SysInit */
+  /* USER CODE BEGIN SysInit */
 
-	/* USER CODE END SysInit */
+  /* USER CODE END SysInit */
 
-	/* Initialize all configured peripherals */
-	MX_GPIO_Init();
-	MX_DMA_Init();
-	MX_I2C3_Init();
-	MX_USB_DEVICE_Init();
-	MX_TIM2_Init();
-	MX_SPI3_Init();
-	/* USER CODE BEGIN 2 */
+  /* Initialize all configured peripherals */
+  MX_GPIO_Init();
+  MX_DMA_Init();
+  MX_I2C3_Init();
+  MX_USB_DEVICE_Init();
+  MX_TIM2_Init();
+  MX_SPI3_Init();
+  MX_TIM3_Init();
+  /* USER CODE BEGIN 2 */
 	init_all();
-	/* USER CODE END 2 */
+  /* USER CODE END 2 */
 
-	/* Infinite loop */
-	/* USER CODE BEGIN WHILE */
+  /* Infinite loop */
+  /* USER CODE BEGIN WHILE */
+
+    IrqFired = false;
+    radioFlag = 0x00;
 	while (1)
 	{
-		/* USER CODE END WHILE */
+    /* USER CODE END WHILE */
 
-		/* USER CODE BEGIN 3 */
+    /* USER CODE BEGIN 3 */
+
 		if(flag_gyro_update)
 		{
-			Gyro_update_data();
-			PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
+			//Gyro_update_data();
+			//PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
 		}
 		else
 		{
-			Menu_Draw(&hi2c3, &guiData, &imu_data, &ori);
+			//menu_data.data->currentState = STATE_GYROSCOPE;
+			//Menu_Draw();
 		}
+		if(flag_transmit)
+		{
+			flag_transmit = 0;
+			HAL_TIM_Base_Stop_IT(&htim3);
+		    Data_Processing();
+		}
+        DX_Lora_RadioIrqProcess();
+
 	}
-	/* USER CODE END 3 */
+  /* USER CODE END 3 */
 }
 
 /**
- * @brief System Clock Configuration
- * @retval None
- */
+  * @brief System Clock Configuration
+  * @retval None
+  */
 void SystemClock_Config(void)
 {
-	RCC_OscInitTypeDef RCC_OscInitStruct = {0};
-	RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
+  RCC_OscInitTypeDef RCC_OscInitStruct = {0};
+  RCC_ClkInitTypeDef RCC_ClkInitStruct = {0};
 
-	/** Configure the main internal regulator output voltage
-	 */
-	__HAL_RCC_PWR_CLK_ENABLE();
-	__HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
+  /** Configure the main internal regulator output voltage
+  */
+  __HAL_RCC_PWR_CLK_ENABLE();
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
-	/** Initializes the RCC Oscillators according to the specified parameters
-	 * in the RCC_OscInitTypeDef structure.
-	 */
-	RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
-	RCC_OscInitStruct.HSEState = RCC_HSE_ON;
-	RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
-	RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-	RCC_OscInitStruct.PLL.PLLM = 25;
-	RCC_OscInitStruct.PLL.PLLN = 336;
-	RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
-	RCC_OscInitStruct.PLL.PLLQ = 7;
-	if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
-	{
-		Error_Handler();
-	}
+  /** Initializes the RCC Oscillators according to the specified parameters
+  * in the RCC_OscInitTypeDef structure.
+  */
+  RCC_OscInitStruct.OscillatorType = RCC_OSCILLATORTYPE_HSE;
+  RCC_OscInitStruct.HSEState = RCC_HSE_ON;
+  RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
+  RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
+  RCC_OscInitStruct.PLL.PLLM = 25;
+  RCC_OscInitStruct.PLL.PLLN = 336;
+  RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
+  RCC_OscInitStruct.PLL.PLLQ = 7;
+  if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
 
-	/** Initializes the CPU, AHB and APB buses clocks
-	 */
-	RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
-			|RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
-	RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
-	RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-	RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
-	RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+  /** Initializes the CPU, AHB and APB buses clocks
+  */
+  RCC_ClkInitStruct.ClockType = RCC_CLOCKTYPE_HCLK|RCC_CLOCKTYPE_SYSCLK
+                              |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
+  RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
+  RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
-	if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
-	{
-		Error_Handler();
-	}
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
+  {
+    Error_Handler();
+  }
 }
 
 /* USER CODE BEGIN 4 */
@@ -298,15 +334,28 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	{
 		flag_gyro_update = 1;
 	}
+	else if(htim->Instance == TIM3)
+	{
+		flag_transmit = 1;
+	}
 }
-//CC1101
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	/* Check if the interrupt came from the CC1101 GDO0 pin */
-	if (GPIO_Pin == cc1101.gdo0_pin) {
+	if (cc1101.initok && GPIO_Pin == cc1101.gdo0_pin) {
 		// This function will automatically trigger the DMA RX if in CC1101_STATE_RX
 		CC1101_Interrupt_Handler(&cc1101);
 	}
+	else if (GPIO_Pin == LORA_DIO1_PIN)
+    {
+        IrqFired = true;
+
+        // Query the SX1262 to see what triggered the IRQ (e.g., RX_DONE, TX_DONE)
+        sx126x_get_irq_status(NULL, &radioFlag);
+
+        // Clear all IRQ flags on the SX1262 module so it can trigger future interrupts
+        sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
+    }
 }
 /**
  * @brief Tx Transfer completed callback.
@@ -362,32 +411,32 @@ void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 /* USER CODE END 4 */
 
 /**
- * @brief  This function is executed in case of error occurrence.
- * @retval None
- */
+  * @brief  This function is executed in case of error occurrence.
+  * @retval None
+  */
 void Error_Handler(void)
 {
-	/* USER CODE BEGIN Error_Handler_Debug */
+  /* USER CODE BEGIN Error_Handler_Debug */
 	/* User can add his own implementation to report the HAL error return state */
 	__disable_irq();
 	while (1)
 	{
 	}
-	/* USER CODE END Error_Handler_Debug */
+  /* USER CODE END Error_Handler_Debug */
 }
 #ifdef USE_FULL_ASSERT
 /**
- * @brief  Reports the name of the source file and the source line number
- *         where the assert_param error has occurred.
- * @param  file: pointer to the source file name
- * @param  line: assert_param error line source number
- * @retval None
- */
+  * @brief  Reports the name of the source file and the source line number
+  *         where the assert_param error has occurred.
+  * @param  file: pointer to the source file name
+  * @param  line: assert_param error line source number
+  * @retval None
+  */
 void assert_failed(uint8_t *file, uint32_t line)
 {
-	/* USER CODE BEGIN 6 */
+  /* USER CODE BEGIN 6 */
 	/* User can add his own implementation to report the file name and line number,
      ex: printf("Wrong parameters value: file %s on line %d\r\n", file, line) */
-	/* USER CODE END 6 */
+  /* USER CODE END 6 */
 }
 #endif /* USE_FULL_ASSERT */

@@ -41,7 +41,9 @@ extern SPI_HandleTypeDef hspi3;
 void MX_SPI3_Init(void);
 
 /* USER CODE BEGIN Prototypes */
-
+void SPI_WriteBytes(uint8_t *pdata, uint16_t sz);
+uint8_t SPI_RWOneByte(uint8_t pdata);
+void SPI_ReadBytes(uint8_t *pdata, uint16_t sz);
 /* USER CODE END Prototypes */
 
 #ifdef __cplusplus

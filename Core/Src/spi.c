@@ -157,6 +157,45 @@ void HAL_SPI_MspDeInit(SPI_HandleTypeDef* spiHandle)
 }
 
 /* USER CODE BEGIN 1 */
+/*
+ *  º¯ÊýÃû£ºvoid SPI_WriteBytes(uint8_t *pdata, uint16_t sz)
+ *  ÊäÈë²ÎÊý£ºpdata -> ÒªÐ´µÄÊý¾ÝÖ¸Õë; sz->ÒªÐ´µÄ×Ö½Ú¸öÊý
+ *  Êä³ö²ÎÊý£ºÎÞ
+ *  ·µ»ØÖµ£ºÎÞ
+ *  º¯Êý×÷ÓÃ£ºSPI·¢ËÍÒ»¸ö×Ö½Ú
+*/
+void SPI_WriteBytes(uint8_t *pdata, uint16_t sz)
+{
+    HAL_SPI_Transmit(&hspi3, pdata, sz, 20);
+}
+
+/*
+ *  º¯ÊýÃû£ºuint8_t SPI_RWOneByte(uint8_t pdata)
+ *  ÊäÈë²ÎÊý£ºpdata -> ÒªÐ´µÄÊý¾Ý
+ *  Êä³ö²ÎÊý£º
+ *  ·µ»ØÖµ£º¶Áµ½µÄÊý¾Ý
+ *  º¯Êý×÷ÓÃ£ºSPI¶ÁÐ´Ò»¸ö×Ö½Ú
+*/
+uint8_t SPI_RWOneByte(uint8_t pdata)
+{
+    uint8_t temp = 0;
+
+    HAL_SPI_TransmitReceive(&hspi3, &pdata, &temp, 1, 20);
+
+    return temp;
+}
+
+/*
+ *  º¯ÊýÃû£ºvoid SPI_ReadBytes(uint8_t *pdata, uint16_t sz)
+ *  ÊäÈë²ÎÊý£ºpdata -> Òª¶ÁµÄÊý¾ÝÖ¸Õë; sz -> Òª¶ÁµÄÊý¾Ý¸öÊý
+ *  Êä³ö²ÎÊý£º
+ *  ·µ»ØÖµ£º
+ *  º¯Êý×÷ÓÃ£ºSPI¶ÁN¸ö×Ö½Ú
+*/
+void SPI_ReadBytes(uint8_t *pdata, uint16_t sz)
+{
+    HAL_SPI_Receive(&hspi3, pdata, sz, 20);
+}
 
 /* USER CODE END 1 */
 

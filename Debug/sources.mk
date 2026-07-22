@@ -22,6 +22,7 @@ C_DEPS :=
 
 # Every subdirectory with source files must be described here
 SUBDIRS := \
+Core/Src/Drivers/DX-LR30_Driver \
 Core/Src/Drivers \
 Core/Src/LCD \
 Core/Src \

@@ -110,43 +110,44 @@ extern "C" {
  * @brief CC1101 internal state machine representation
  */
 typedef enum {
-    CC1101_STATE_IDLE = 0,
-    CC1101_STATE_RX,
-    CC1101_STATE_TX,
-    CC1101_STATE_SLEEP,
-    CC1101_STATE_CALIBRATING,
-    CC1101_STATE_ERROR
+	CC1101_STATE_IDLE = 0,
+	CC1101_STATE_RX,
+	CC1101_STATE_TX,
+	CC1101_STATE_SLEEP,
+	CC1101_STATE_CALIBRATING,
+	CC1101_STATE_ERROR
 } cc1101_state_t;
 
 /**
  * @brief CC1101 Device Handle Structure
  */
 typedef struct {
-    /* Hardware Interface */
-    SPI_HandleTypeDef *hspi;       // Pointer to SPI3 handle
+	/* Hardware Interface */
+	SPI_HandleTypeDef *hspi;       // Pointer to SPI3 handle
 
-    GPIO_TypeDef *cs_port;         // Chip Select Port
-    uint16_t cs_pin;               // Chip Select Pin
+	GPIO_TypeDef *cs_port;         // Chip Select Port
+	uint16_t cs_pin;               // Chip Select Pin
 
-    GPIO_TypeDef *gdo0_port;       // GDO0 Port (Interrupt)
-    uint16_t gdo0_pin;             // GDO0 Pin
+	GPIO_TypeDef *gdo0_port;       // GDO0 Port (Interrupt)
+	uint16_t gdo0_pin;             // GDO0 Pin
 
-    GPIO_TypeDef *gdo2_port;       // GDO2 Port (Interrupt)
-    uint16_t gdo2_pin;             // GDO2 Pin
+	GPIO_TypeDef *gdo2_port;       // GDO2 Port (Interrupt)
+	uint16_t gdo2_pin;             // GDO2 Pin
 
-    /* Data Buffers */
-    uint8_t tx_fifo[CC1101_FIFO_SIZE];
-    uint8_t rx_fifo[CC1101_FIFO_SIZE];
+	/* Data Buffers */
+	uint8_t tx_fifo[CC1101_FIFO_SIZE];
+	uint8_t rx_fifo[CC1101_FIFO_SIZE];
 
-    /* Variables */
-    uint8_t rx_len;                // Length of recently received packet
-    int8_t rssi;                   // Received Signal Strength Indicator
-    uint8_t lqi;                   // Link Quality Indicator
+	/* Variables */
+	uint8_t rx_len;                // Length of recently received packet
+	int8_t rssi;                   // Received Signal Strength Indicator
+	uint8_t lqi;                   // Link Quality Indicator
 
-    cc1101_state_t state;          // Current operational state
+	cc1101_state_t state;          // Current operational state
 
-    /* DMA Management */
-    volatile bool dma_busy;        // Used to track when DMA is operating
+	/* DMA Management */
+	volatile bool dma_busy;        // Used to track when DMA is operating
+	uint8_t initok;
 } cc1101_t;
 
 /* ========================================================================== */

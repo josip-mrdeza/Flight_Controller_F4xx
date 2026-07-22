@@ -1,0 +1,5 @@
+../Core/Src/Drivers/DX-LR30_Driver/sx126x_hal.c:14:21:sx126x_hal_write	24	static
+../Core/Src/Drivers/DX-LR30_Driver/sx126x_hal.c:33:21:sx126x_hal_read	24	static
+../Core/Src/Drivers/DX-LR30_Driver/sx126x_hal.c:52:21:sx126x_hal_reset	16	static
+../Core/Src/Drivers/DX-LR30_Driver/sx126x_hal.c:64:21:sx126x_hal_wakeup	24	static
+../Core/Src/Drivers/DX-LR30_Driver/sx126x_hal.c:75:5:sx126x_get_busy	8	static

@@ -1,3 +1,6 @@
 ../Core/Src/spi.c:32:6:MX_SPI3_Init	2
 ../Core/Src/spi.c:64:6:HAL_SPI_MspInit	4
 ../Core/Src/spi.c:132:6:HAL_SPI_MspDeInit	2
+../Core/Src/spi.c:167:6:SPI_WriteBytes	1
+../Core/Src/spi.c:179:9:SPI_RWOneByte	1
+../Core/Src/spi.c:195:6:SPI_ReadBytes	1
