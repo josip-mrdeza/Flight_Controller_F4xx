@@ -1,0 +1,5 @@
+../Core/Src/Drivers/gy6500.c:14:19:GY6500_Init	40	static
+../Core/Src/Drivers/gy6500.c:19:19:GY6500_Calibrate	80	static
+../Core/Src/Drivers/gy6500.c:52:6:GY6500_ResetKinematics	16	static
+../Core/Src/Drivers/gy6500.c:62:15:GY6500_Poll	184	static
+../Core/Src/Drivers/gy6500.c:135:15:Get_Orientation_Accel	88	static

@@ -1,0 +1,5 @@
+../Core/Src/Drivers/gy273.c:11:19:GY273_Init	2
+../Core/Src/Drivers/gy273.c:24:17:GY273_PollRaw	2
+../Core/Src/Drivers/gy273.c:38:19:GY273_AutoCalibrate	12
+../Core/Src/Drivers/gy273.c:75:7:GY273_GetHeading2D	5
+../Core/Src/Drivers/gy273.c:91:7:GY273_GetHeading3D	6

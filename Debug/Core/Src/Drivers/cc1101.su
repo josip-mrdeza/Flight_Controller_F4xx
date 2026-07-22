@@ -1,0 +1,14 @@
+../Core/Src/Drivers/cc1101.c:7:13:CS_Low	16	static
+../Core/Src/Drivers/cc1101.c:11:13:CS_High	16	static
+../Core/Src/Drivers/cc1101.c:15:16:CC1101_WriteReg	32	static
+../Core/Src/Drivers/cc1101.c:26:16:CC1101_ReadReg	32	static
+../Core/Src/Drivers/cc1101.c:37:16:CC1101_ReadStatus	32	static
+../Core/Src/Drivers/cc1101.c:52:9:CC1101_Strobe	32	static
+../Core/Src/Drivers/cc1101.c:60:6:CC1101_Reset	16	static
+../Core/Src/Drivers/cc1101.c:73:19:CC1101_Init	24	static
+../Core/Src/Drivers/cc1101.c:137:6:CC1101_SetRX	16	static
+../Core/Src/Drivers/cc1101.c:144:6:CC1101_SetTX	16	static
+../Core/Src/Drivers/cc1101.c:150:19:CC1101_Transmit_DMA	32	static
+../Core/Src/Drivers/cc1101.c:182:19:CC1101_Receive_DMA	24	static
+../Core/Src/Drivers/cc1101.c:207:6:CC1101_DMA_Complete_Callback	24	static
+../Core/Src/Drivers/cc1101.c:232:6:CC1101_Interrupt_Handler	16	static

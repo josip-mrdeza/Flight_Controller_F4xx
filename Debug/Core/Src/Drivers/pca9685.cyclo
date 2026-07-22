@@ -1,0 +1,5 @@
+../Core/Src/Drivers/pca9685.c:3:19:PCA9685_Init	2
+../Core/Src/Drivers/pca9685.c:15:19:PCA9685_SetPWMFrequency	4
+../Core/Src/Drivers/pca9685.c:45:19:PCA9685_SetPWM	2
+../Core/Src/Drivers/pca9685.c:60:19:PCA9685_SetDutyCycle	5
+../Core/Src/Drivers/pca9685.c:78:19:PCA9685_SetServoPulse	1
