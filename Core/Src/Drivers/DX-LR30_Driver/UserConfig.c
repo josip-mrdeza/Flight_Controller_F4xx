@@ -126,6 +126,7 @@ void LoraInit(void)
 
 	/* 设置载波频率(频点) */
 	sx126x_set_rf_freq(NULL,LORA_FRE);
+	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
 
 #if TEST
 	g_lora_test_rxs = true;
@@ -182,10 +183,16 @@ void LoraDataSend(uint8_t *data,uint8_t len)
 void LoraOpenRXMode(uint8_t Timerout)
 {
 	g_lora_test_rxs = true;
-	sx126x_set_rx(NULL,Timerout);
-	sx1262SetOperatingMode(MODE_RX);
-	RxEn();
 
+	// Force Standby to clear modem hardware state
+	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
+
+	// Clear any stale IRQs left over from boot-time RF preamble hits
+	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
+
+	RxEn();
+	sx126x_set_rx(NULL, Timerout);
+	sx1262SetOperatingMode(MODE_RX);
 }
 
 
@@ -300,13 +307,17 @@ void Data_Processing(void)
 
 void DX_Lora_RadioIrqProcess(void)
 {
-
-	if(IrqFired == true)
+	//Fix for the receiver not receiving if the transmitter if init'ed before the receiver. 1
+	if(IrqFired || (HAL_GPIO_ReadPin(LCC68_DIO1_PORT, LCC68_DIO1_PIN) == GPIO_PIN_SET))
 	{
 		__disable_irq();
 		IrqFired = false;
 		__enable_irq();
+		// Query the SX1262 to see what triggered the IRQ (e.g., RX_DONE, TX_DONE)
+		sx126x_get_irq_status(NULL, &radioFlag);
 
+		// Clear all IRQ flags on the SX1262 module so it can trigger future interrupts
+		sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
 		if( ( radioFlag & SX126X_IRQ_TX_DONE ) == SX126X_IRQ_TX_DONE )
 		{
 			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
@@ -366,7 +377,15 @@ void DX_Lora_RadioIrqProcess(void)
 		{
 			RxTimeout();
 		}
-
+		//Fix for the receiver not receiving if the transmitter if init'ed before the receiver. 2
+		if ((radioFlag & SX126X_IRQ_HEADER_ERROR) ||
+				(radioFlag & SX126X_IRQ_CRC_ERROR)    ||
+				(radioFlag & SX126X_IRQ_TIMEOUT))
+		{
+			// Reset RX mode if a bad/partial packet was caught during boot
+			RxError();
+			LoraOpenRXMode(0xFFFFFF);
+		}
 
 	}
 

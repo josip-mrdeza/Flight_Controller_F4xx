@@ -265,19 +265,17 @@ int main(void)
 			//Gyro_update_data();
 			//PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
 		}
-		else
+		if(IrqFired)
 		{
-			//menu_data.data->currentState = STATE_GYROSCOPE;
-			//Menu_Draw();
 		}
 		if(flag_transmit)
 		{
 			flag_transmit = 0;
 			HAL_TIM_Base_Stop_IT(&htim3);
-		    Data_Processing();
+		    //Data_Processing();
 		}
         DX_Lora_RadioIrqProcess();
-
+    	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
 	}
   /* USER CODE END 3 */
 }
@@ -349,12 +347,6 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 	else if (GPIO_Pin == LORA_DIO1_PIN)
     {
         IrqFired = true;
-
-        // Query the SX1262 to see what triggered the IRQ (e.g., RX_DONE, TX_DONE)
-        sx126x_get_irq_status(NULL, &radioFlag);
-
-        // Clear all IRQ flags on the SX1262 module so it can trigger future interrupts
-        sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
     }
 }
 /**
