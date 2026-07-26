@@ -18,14 +18,16 @@ void Menu_Draw() {
 			SSD1315_Title("[INIT]");
 			break;
 		case STATE_RX_RADIO:
-			SSD1315_Title("[RX RADIO]");
+			sprintf(buff, "[RX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			SSD1315_Title(buff);
 			break;
 		case STATE_TX_RADIO:
-			SSD1315_Title("[TX RADIO]");
-
+			sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			SSD1315_Title(buff);
 			break;
 		case STATE_GYROSCOPE:
-			SSD1315_Title("[GYROSCOPE]");
+			sprintf(buff, "[GYROSCOPE] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			SSD1315_Title(buff);
 			sprintf(buff, "X:%.1fdeg/%.1fm/s2", menu_data.orientation_data->roll_deg, menu_data.imu_data->accel_x);
 			SSD1315_Line_1(buff);
 			sprintf(buff, "Y:%.1fdeg/%.1fm/s2", menu_data.orientation_data->pitch_deg, menu_data.imu_data->accel_y);

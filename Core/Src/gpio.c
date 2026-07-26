@@ -80,11 +80,11 @@ void MX_GPIO_Init(void)
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
-  /*Configure GPIO pin : LR30_BUSY_Pin */
-  GPIO_InitStruct.Pin = LR30_BUSY_Pin;
+  /*Configure GPIO pins : LR30_BUSY_Pin DEF_SWITCH_C_P_Pin */
+  GPIO_InitStruct.Pin = LR30_BUSY_Pin|DEF_SWITCH_C_P_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  HAL_GPIO_Init(LR30_BUSY_GPIO_Port, &GPIO_InitStruct);
+  HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /* EXTI interrupt init*/
   HAL_NVIC_SetPriority(EXTI3_IRQn, 3, 0);

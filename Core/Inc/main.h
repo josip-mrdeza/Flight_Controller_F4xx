@@ -75,6 +75,8 @@ void Error_Handler(void);
 #define LR30_RXEN_GPIO_Port GPIOB
 #define LR30_TXEN_Pin GPIO_PIN_8
 #define LR30_TXEN_GPIO_Port GPIOB
+#define DEF_SWITCH_C_P_Pin GPIO_PIN_9
+#define DEF_SWITCH_C_P_GPIO_Port GPIOB
 
 /* USER CODE BEGIN Private defines */
 

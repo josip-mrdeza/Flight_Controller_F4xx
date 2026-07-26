@@ -78,6 +78,7 @@ float heading_2d;
 Orientation_t ori;
 uint8_t flag_transmit = 0;
 volatile _Bool packet_received = false;
+uint8_t is_controller = 0; //0-controller, 1-plane
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -88,8 +89,13 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+_Bool is_plane()
+{
+	return !is_controller;
+}
 void init_all()
 {
+	guiData.is_controller_ptr = &is_controller;
 	Menu_Init(&hi2c3, &guiData, &imu_data, &ori);
 	SSD1315_Init(&hi2c3);
 	Menu_Draw();
@@ -169,7 +175,6 @@ void init_all()
 		sprintf(buff, "Init CC1101: %s", radio_status == HAL_OK ? "Ok" : "Fail");
 		SSD1315_Line_1(buff);
 		SSD1315_UpdateScreen(&hi2c3);
-		HAL_Delay(50);
 		cc1101.initok = 1;
 	}
 	if(radio_status != HAL_OK)
@@ -177,7 +182,7 @@ void init_all()
 		sprintf(buff, "Failed to init!");
 		SSD1315_Line_2(buff);
 		SSD1315_UpdateScreen(&hi2c3);
-		HAL_Delay(200);
+		HAL_Delay(25);
 		cc1101.initok = 0;
 	}
 	radio_status = 0;
@@ -193,7 +198,16 @@ void init_all()
 	sprintf(buff, "Init DX-LR30: %s", radio_status ? "Ok" : "Fail");
 	SSD1315_Line_1(buff);
 	SSD1315_UpdateScreen(&hi2c3);
-	HAL_Delay(200);
+	HAL_Delay(25);
+
+	Menu_Draw();
+	sprintf(buff, "[CHECKING DEFINTION]");
+	SSD1315_Title(buff);
+	is_controller = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
+	sprintf(buff, "Init as: %s", is_plane() ? "Plane" : "Controller");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+	HAL_Delay(100);
 }
 void Gyro_update_data()
 {
@@ -259,7 +273,7 @@ int main(void)
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-
+		is_controller = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
 		if(flag_gyro_update)
 		{
 			//Gyro_update_data();
@@ -268,11 +282,11 @@ int main(void)
 		if(IrqFired)
 		{
 		}
-		if(flag_transmit)
+		if(flag_transmit && is_plane())
 		{
 			flag_transmit = 0;
 			HAL_TIM_Base_Stop_IT(&htim3);
-		    //Data_Processing();
+		    Data_Processing();
 		}
         DX_Lora_RadioIrqProcess();
     	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);

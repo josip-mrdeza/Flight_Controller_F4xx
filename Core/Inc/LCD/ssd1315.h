@@ -33,6 +33,7 @@ typedef struct {
     uint8_t selectedItem;
     uint8_t* ptrToUsbBuff;
     uint16_t* ptrToUsbBuffLen;
+    uint8_t* is_controller_ptr;
 } AppData_t;
 
 void SSD1315_DrawChar(uint8_t x, uint8_t y, char c);

@@ -210,6 +210,9 @@ void OnTxDone(void)
 	menu_data.data->currentState = STATE_TX_RADIO;
 	//Menu_Draw();
 	char buff[24];
+	memset(buff, 0, 24);
+	sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane  ");
+	SSD1315_Title(buff);
 	sprintf(buff, "DtR: %.2f B/s", approxDataTransferSpeed);
 	SSD1315_Line_1(buff);
 	sprintf(buff, "Transferred: %d B", lastTransmitLength);
