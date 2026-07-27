@@ -79,6 +79,7 @@ Orientation_t ori;
 uint8_t flag_transmit = 0;
 volatile _Bool packet_received = false;
 uint8_t is_controller = 0; //0-controller, 1-plane
+_Bool flag_waiting_ack = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -261,13 +262,17 @@ int main(void)
   MX_TIM3_Init();
   /* USER CODE BEGIN 2 */
 	init_all();
+	MX_USB_DEVICE_Init();
   /* USER CODE END 2 */
 
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-    IrqFired = false;
-    radioFlag = 0x00;
+	IrqFired = false;
+	radioFlag = 0x00;
+	char buff[255];
+	long loopnum = 0;
+
 	while (1)
 	{
     /* USER CODE END WHILE */
@@ -276,20 +281,20 @@ int main(void)
 		is_controller = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
 		if(flag_gyro_update)
 		{
-			//Gyro_update_data();
+			Gyro_update_data();
 			//PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
 		}
 		if(IrqFired)
 		{
 		}
-		if(flag_transmit && is_plane())
+		if((flag_transmit && !menu_data.waiting_ack))
 		{
 			flag_transmit = 0;
 			HAL_TIM_Base_Stop_IT(&htim3);
-		    Data_Processing();
+			Data_Processing();
 		}
-        DX_Lora_RadioIrqProcess();
-    	HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
+		DX_Lora_RadioIrqProcess();
+		//sprintf(buff, "I just went through a loop num: %ld\n", ++loopnum);//3x slower cuz of this
 	}
   /* USER CODE END 3 */
 }
@@ -315,7 +320,7 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.HSEState = RCC_HSE_ON;
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
-  RCC_OscInitStruct.PLL.PLLM = 25;
+  RCC_OscInitStruct.PLL.PLLM = 8;
   RCC_OscInitStruct.PLL.PLLN = 336;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 7;
@@ -359,9 +364,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 		CC1101_Interrupt_Handler(&cc1101);
 	}
 	else if (GPIO_Pin == LORA_DIO1_PIN)
-    {
-        IrqFired = true;
-    }
+	{
+		IrqFired = true;
+	}
 }
 /**
  * @brief Tx Transfer completed callback.

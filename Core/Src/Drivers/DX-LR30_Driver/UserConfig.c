@@ -24,6 +24,7 @@ volatile uint32_t lastTransmitDelay = 0;
 volatile uint32_t tickTransmitStart = 0;
 volatile uint32_t tickTransmitEnd = 0;
 volatile uint8_t lastTransmitLength = 0;
+volatile uint32_t tick_roundTripPing = 0;
 volatile float approxDataTransferSpeed = 0;
 volatile uint8_t IrqFired = 0;
 sx126x_rx_buffer_status_t offset = {0};
@@ -206,6 +207,7 @@ void OnTxDone(void)
 	lastTransmitDelay = tickTransmitEnd - tickTransmitStart;
 	approxDataTransferSpeed = lastTransmitLength / (lastTransmitDelay / 1000.0f); //B/s
 	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	menu_data.waiting_ack = 1;
 	HAL_TIM_Base_Start_IT(&htim3);
 	menu_data.data->currentState = STATE_TX_RADIO;
 	//Menu_Draw();
@@ -213,13 +215,17 @@ void OnTxDone(void)
 	memset(buff, 0, 24);
 	sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane  ");
 	SSD1315_Title(buff);
-	sprintf(buff, "DtR: %.2f B/s", approxDataTransferSpeed);
+	sprintf(buff, "DtR: %.2f B/s          ", approxDataTransferSpeed);
 	SSD1315_Line_1(buff);
 	sprintf(buff, "Transferred: %d B", lastTransmitLength);
 	SSD1315_Line_2(buff);
-	sprintf(buff, "Dt: %d ms", lastTransmitDelay);
+	memset(buff, 0, 24);
+	sprintf(buff, "Dt: %d ms           ", lastTransmitDelay);
 	SSD1315_Line_3(buff);
 	SSD1315_UpdateScreen(menu_data.hi2c);
+//	char buff2[255];
+//	sprintf(buff2, "DtR:%.2f\nTB:%d\nTrPing:%d\n", approxDataTransferSpeed, lastTransmitLength, lastTransmitDelay);
+//	CDC_Transmit_FS(buff2, strlen(buff2));
 }
 
 void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
@@ -229,15 +235,19 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
 	menu_data.data->currentState = STATE_RX_RADIO;
 	Menu_Draw();
-	SSD1315_Line_1("Received data: ");
 	char buff[24];
+	sprintf(buff, "RTripPing: %dms   ", tick_roundTripPing);
+	SSD1315_Line_1(buff);
 	memcpy(buff, payload, 24);
 	SSD1315_Line_2(buff);
 	memset(buff, 0, 24);
-	sprintf(buff, "RSSI/SNR: %d/%d", rssi, snr);
+	sprintf(buff, "RSSI/SNR:%d/%d", rssi, snr);
 	SSD1315_Line_3(buff);
 	SSD1315_UpdateScreen(menu_data.hi2c);
 	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	//sprintf(buff2, "RTripPing:%d\nRSSI:%d\nSNR:%d\n", tick_roundTripPing, rssi, snr);
+	//CDC_Transmit_FS(buff2, strlen(buff2));
+	CDC_Transmit_FS(payload, size);
 }
 
 void RxError(void)
@@ -290,8 +300,38 @@ void Data_Processing(void)
 	{
 #if !TEST
 		char buff[255];
-		//snprintf(buff, sizeof(buff), "Controller feedback to plane brain.");
-		snprintf(buff, sizeof(buff), "Plane brain feedback to controller interface!");
+		if(*menu_data.data->is_controller_ptr)
+		{
+			//controller
+			snprintf(buff, sizeof(buff), "controller data mock");
+		}
+		else
+		{
+			//plane
+			snprintf(buff, sizeof(buff), "ax%.2f;ay%.2f;az%.2f;"
+					"vx%.2f;vy%.2f;vz%.2f;"
+					"gx%.2f;gy%.2f;gz%.2f;"
+					"tm%.2f;"
+					"px%.2f;py%.2f;pz%.2f;"
+					"rx%.2f;ry%.2f;rz%.2f;"
+					"\r\n",
+					menu_data.imu_data->accel_x,
+					menu_data.imu_data->accel_y,
+					menu_data.imu_data->accel_z,
+					menu_data.imu_data->vel_x,
+					menu_data.imu_data->vel_y,
+					menu_data.imu_data->vel_z,
+					menu_data.imu_data->roll,
+					menu_data.imu_data->pitch,
+					menu_data.imu_data->yaw,
+					menu_data.imu_data->pos_x,
+					menu_data.imu_data->pos_y,
+					menu_data.imu_data->pos_z,
+					menu_data.imu_data->roll,
+					menu_data.imu_data->pitch,
+					menu_data.imu_data->yaw,
+					menu_data.imu_data->temp);
+		}
 		tickTransmitStart = HAL_GetTick(); //ms
 		uint8_t len = (uint8_t) strlen(buff);
 		lastTransmitLength = len;
@@ -328,12 +368,15 @@ void DX_Lora_RadioIrqProcess(void)
 		}
 		if( ( radioFlag & SX126X_IRQ_RX_DONE ) ==  SX126X_IRQ_RX_DONE )
 		{
+			menu_data.waiting_ack = 0;
+			tick_roundTripPing = HAL_GetTick() - tickTransmitStart;
 			sx126x_set_standby(NULL,SX126X_STANDBY_CFG_RC );
 			sx126x_get_rx_buffer_status(NULL, &offset);
 			sx126x_read_buffer(NULL, offset.buffer_start_pointer, radioRxbuff, offset.pld_len_in_bytes);
 			sx126x_get_lora_pkt_status(NULL, &RadioPktStatus);
 			OnRxDone(&radioRxbuff[0],  offset.pld_len_in_bytes, RadioPktStatus.rssi_pkt_in_dbm + RadioPktStatus.snr_pkt_in_db, RadioPktStatus.snr_pkt_in_db);
 			memset(radioRxbuff,0,255);
+			HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
 		}
 
 		if( ( radioFlag &  SX126X_IRQ_CRC_ERROR ) ==  SX126X_IRQ_CRC_ERROR )

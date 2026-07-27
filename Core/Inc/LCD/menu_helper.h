@@ -17,6 +17,7 @@ typedef struct {
 	I2C_HandleTypeDef *hi2c;
 	AppData_t *data; GY6500_Data_t*  imu_data;
 	Orientation_t* orientation_data;
+	_Bool waiting_ack;
 } Menu_data_t;
 extern Menu_data_t menu_data;
 void Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data);
