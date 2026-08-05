@@ -154,6 +154,10 @@ void init_all()
 	HAL_Delay(status_pca == 1 ? 0 : 3000);
 	HAL_TIM_Base_Start_IT(&htim2);
 	HAL_TIM_Base_Start_IT(&htim3);
+	if(!is_controller)
+	{
+		htim4.Init.Period*=2;
+	}
 	SSD1315_UpdateScreen(&hi2c3);
 	Menu_Draw();
 	sprintf(buff, "Init CC1101: ...");
@@ -212,6 +216,10 @@ void init_all()
 }
 void Gyro_update_data()
 {
+	if(is_controller)
+	{
+		return;
+	}
 	flag_gyro_update = 0;
 	ms = ((HAL_GetTick() - imu_data.last_tick));
 	imu_data = GY6500_Poll(&hi2c3, &imu_calib, &imu_data);
@@ -260,6 +268,7 @@ int main(void)
   MX_TIM2_Init();
   MX_SPI3_Init();
   MX_TIM3_Init();
+  MX_TIM4_Init();
   /* USER CODE BEGIN 2 */
 	init_all();
 	MX_USB_DEVICE_Init();
@@ -272,7 +281,7 @@ int main(void)
 	radioFlag = 0x00;
 	char buff[255];
 	long loopnum = 0;
-
+	display_off = true;
 	while (1)
 	{
     /* USER CODE END WHILE */
@@ -284,8 +293,14 @@ int main(void)
 			Gyro_update_data();
 			//PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
 		}
-		if(IrqFired)
+		if(menu_data.flag_reset_transmit)
 		{
+			menu_data.flag_reset_transmit = 0;
+			flag_transmit = 1;
+			menu_data.waiting_ack = 0;
+			//sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
+			//sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
+			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 1);
 		}
 		if((flag_transmit && !menu_data.waiting_ack))
 		{
@@ -354,6 +369,10 @@ void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 	else if(htim->Instance == TIM3)
 	{
 		flag_transmit = 1;
+	}
+	else if(htim->Instance == TIM4)
+	{
+		menu_data.flag_reset_transmit = 1;
 	}
 }
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)

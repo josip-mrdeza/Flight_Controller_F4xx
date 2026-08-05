@@ -32,6 +32,7 @@ sx126x_pkt_status_lora_t RadioPktStatus;
 sx126x_irq_mask_t radioFlag = 0;
 
 static volatile RadioOperatingModes_t OperatingMode;
+volatile uint32_t LORA_SX126x_SYMBOL_TIMEOUT = 0;
 void LoraOpenRXMode(uint8_t Timerout);
 
 
@@ -73,6 +74,50 @@ void TxEn(void)
 
 
 
+uint32_t SX126x_CalcSymbolTimeout()
+{
+    uint32_t bw_hz = SX126x_BW_Hz(LORA_BW);
+
+    float tSym = (float)(1 << LORA_SF) / (float)bw_hz;  // seconds
+    float timeoutSymbols = LORA_PREAMBLE_LENGTH + 4.25f;
+
+    return (uint32_t)(timeoutSymbols);
+}
+
+uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms)
+{
+    uint32_t bw_hz = SX126x_BW_Hz(LORA_BW);
+
+    float tSym_ms = ((float)(1 << LORA_SF) / (float)bw_hz) * 1000.0f;
+
+    uint32_t symbols = (uint32_t)(timeout_ms / tSym_ms);
+
+    if(symbols < 1)
+        symbols = 1;
+
+    return symbols;
+}
+
+
+uint32_t SX126x_BW_Hz(uint8_t bw)
+{
+    switch(bw)
+    {
+        case SX126X_LORA_BW_007:   return 7800;
+        case SX126X_LORA_BW_010:  return 10400;
+        case SX126X_LORA_BW_015:  return 15600;
+        case SX126X_LORA_BW_020:  return 20800;
+        case SX126X_LORA_BW_031:  return 31200;
+        case SX126X_LORA_BW_041:  return 41700;
+        case SX126X_LORA_BW_062:  return 62500;
+        case SX126X_LORA_BW_125: return 125000;
+        case SX126X_LORA_BW_250: return 250000;
+        case SX126X_LORA_BW_500: return 500000;
+        default: return 125000; // safe fallback
+    }
+}
+
+
 
 void LoraInit(void)
 {
@@ -112,6 +157,8 @@ void LoraInit(void)
 	params2.preamble_len_in_symb = LORA_PREAMBLE_LENGTH;
 	sx126x_set_lora_pkt_params(NULL, &params2);
 
+//    LORA_SX126x_SYMBOL_TIMEOUT =
+//        SX126x_CalcSymbolTimeout();
 
 	sx126x_pa_cfg_params_t  params3;
 	params3.pa_duty_cycle = 0x04;
@@ -211,18 +258,23 @@ void OnTxDone(void)
 	HAL_TIM_Base_Start_IT(&htim3);
 	menu_data.data->currentState = STATE_TX_RADIO;
 	//Menu_Draw();
-	char buff[24];
-	memset(buff, 0, 24);
-	sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane  ");
-	SSD1315_Title(buff);
-	sprintf(buff, "DtR: %.2f B/s          ", approxDataTransferSpeed);
-	SSD1315_Line_1(buff);
-	sprintf(buff, "Transferred: %d B", lastTransmitLength);
-	SSD1315_Line_2(buff);
-	memset(buff, 0, 24);
-	sprintf(buff, "Dt: %d ms           ", lastTransmitDelay);
-	SSD1315_Line_3(buff);
-	SSD1315_UpdateScreen(menu_data.hi2c);
+	if(!display_off)
+	{
+		char buff[24];
+		memset(buff, 0, 24);
+		sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane  ");
+		SSD1315_Title(buff);
+		sprintf(buff, "DtR: %.2f B/s          ", approxDataTransferSpeed);
+		SSD1315_Line_1(buff);
+		sprintf(buff, "Transferred: %d B", lastTransmitLength);
+		SSD1315_Line_2(buff);
+		memset(buff, 0, 24);
+		sprintf(buff, "Dt: %d ms           ", lastTransmitDelay);
+		SSD1315_Line_3(buff);
+		SSD1315_UpdateScreen(menu_data.hi2c);
+	}
+	//start waiting for response, if we dont get it in the required time, we reset and try again.
+	HAL_TIM_Base_Start_IT(&htim4);
 //	char buff2[255];
 //	sprintf(buff2, "DtR:%.2f\nTB:%d\nTrPing:%d\n", approxDataTransferSpeed, lastTransmitLength, lastTransmitDelay);
 //	CDC_Transmit_FS(buff2, strlen(buff2));
@@ -232,19 +284,24 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 {
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
-	menu_data.data->currentState = STATE_RX_RADIO;
-	Menu_Draw();
-	char buff[24];
-	sprintf(buff, "RTripPing: %dms   ", tick_roundTripPing);
-	SSD1315_Line_1(buff);
-	memcpy(buff, payload, 24);
-	SSD1315_Line_2(buff);
-	memset(buff, 0, 24);
-	sprintf(buff, "RSSI/SNR:%d/%d", rssi, snr);
-	SSD1315_Line_3(buff);
-	SSD1315_UpdateScreen(menu_data.hi2c);
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	//LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	//menu_data.data->currentState = STATE_RX_RADIO;
+	HAL_TIM_Base_Stop_IT(&htim4);
+	htim4.Instance->CNT=0; //reset counter
+	if(!display_off)
+	{
+		Menu_Draw();
+		char buff[24];
+		sprintf(buff, "RTripPing: %dms   ", tick_roundTripPing);
+		SSD1315_Line_1(buff);
+		memcpy(buff, payload, 24);
+		SSD1315_Line_2(buff);
+		memset(buff, 0, 24);
+		sprintf(buff, "RSSI/SNR:%d/%d", rssi, snr);
+		SSD1315_Line_3(buff);
+		SSD1315_UpdateScreen(menu_data.hi2c);
+	}
+	//LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
 	//sprintf(buff2, "RTripPing:%d\nRSSI:%d\nSNR:%d\n", tick_roundTripPing, rssi, snr);
 	//CDC_Transmit_FS(buff2, strlen(buff2));
 	CDC_Transmit_FS(payload, size);
@@ -274,14 +331,16 @@ void RxTimeout(void)
 {
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	menu_data.waiting_ack = false;
+	LoraOpenRXMode(SX126x_TimeoutMs_To_Symbols(100));
 }
 
 void TxTimeout(void)
 {
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	menu_data.waiting_ack = false;
+	LoraOpenRXMode(SX126x_TimeoutMs_To_Symbols(100));
 }
 
 
@@ -381,6 +440,7 @@ void DX_Lora_RadioIrqProcess(void)
 
 		if( ( radioFlag &  SX126X_IRQ_CRC_ERROR ) ==  SX126X_IRQ_CRC_ERROR )
 		{
+			menu_data.waiting_ack = 0;
 			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
 			RxError();
 		}
@@ -393,6 +453,7 @@ void DX_Lora_RadioIrqProcess(void)
 
 		if((radioFlag & SX126X_IRQ_TIMEOUT) == SX126X_IRQ_TIMEOUT)
 		{
+			menu_data.waiting_ack = 0;
 			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
 			if( sx1262GetOperatingMode( ) == MODE_TX )
 			{
@@ -421,6 +482,7 @@ void DX_Lora_RadioIrqProcess(void)
 
 		if( ( radioFlag & SX126X_IRQ_HEADER_ERROR ) == SX126X_IRQ_HEADER_ERROR )
 		{
+			menu_data.waiting_ack = 0;
 			RxTimeout();
 		}
 		//Fix for the receiver not receiving if the transmitter if init'ed before the receiver. 2
@@ -430,6 +492,7 @@ void DX_Lora_RadioIrqProcess(void)
 		{
 			// Reset RX mode if a bad/partial packet was caught during boot
 			RxError();
+			menu_data.waiting_ack = 0;
 			LoraOpenRXMode(0xFFFFFF);
 		}
 

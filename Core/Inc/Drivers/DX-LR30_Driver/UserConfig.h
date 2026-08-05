@@ -65,7 +65,6 @@
 #define LORA_FRE									868000000	// frequency
 #define LORA_PREAMBLE_LENGTH                        8        // PREAMBLE LENGTH
 //#define LORA_SX126x_SYMBOL_TIMEOUT                  0         // Symbols(SX126x)
-#define LORA_SX126x_SYMBOL_TIMEOUT                  0        // Symbols(SX126x)
 #define LORA_FIX_LENGTH_PAYLOAD_ON                  false			// PAYLOAD FIX LENGTH
 #define LORA_IQ_INVERSION_ON                        false			// IQ INVERSION
 
@@ -111,11 +110,25 @@ extern volatile uint32_t tickTransmitStart;
 extern volatile uint32_t tickTransmitEnd;
 extern volatile uint8_t lastTransmitLength;
 extern volatile float approxDataTransferSpeed;
+// ---------------- LoRa Configurable Parameters ----------------
 
+// Bandwidth options (SX126x enum values)
+#define LORA_BW                SX126X_LORA_BW_062   // 7 = 125kHz, 8 = 250kHz, 9 = 500kHz
 
+// Spreading factor (7–12)
+#define LORA_SF                SX126X_LORA_SF9
 
+// Coding rate
+#define LORA_CR                SX126X_LORA_CR_4_6
 
+// Preamble length (symbols)
+#define LORA_PREAMBLE_LENGTH   8
 
+// Symbol timeout (calculated dynamically)
+extern volatile uint32_t LORA_SX126x_SYMBOL_TIMEOUT;
+uint32_t SX126x_CalcSymbolTimeout();
+uint32_t SX126x_BW_Hz(uint8_t bw);
+uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms);
 
 extern void Data_Processing(void);
 

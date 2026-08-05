@@ -1,5 +1,6 @@
 #include "LCD/menu_helper.h"
 Menu_data_t menu_data;
+_Bool display_off;
 void Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data) {
 	data->currentState = STATE_INIT;
 	data->selectedItem = 0;
@@ -10,6 +11,10 @@ void Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_dat
 }
 
 void Menu_Draw() {
+	if(display_off)
+	{
+		return;
+	}
 	char buff[24];
 	SSD1315_Clear();
 	int prev_state = menu_data.data->currentState;
