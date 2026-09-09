@@ -31,12 +31,53 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
+#include <stdint.h>
+#include <stdbool.h>
+#include <stddef.h>
+#include <string.h>
+#include <stdio.h>
+#include <math.h>
 
+#include "LCD/ssd1315.h"
+#include "LCD/menu_helper.h"
+#include "Drivers/gy6500.h"
+#include "Drivers/gy273.h"
+#include "Drivers/pca9685.h"
+#include "Drivers/cc1101.h"
+#include "Drivers/i2c_helper.h"
+#include "Drivers/DX-LR30_Driver/sx126x.h"
+#include "Drivers/DX-LR30_Driver/driver_DIO1.h"
+#include "Drivers/DX-LR30_Driver/UserConfig.h"
+#include "Drivers/gy_gps6mv2.h"
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
 /* USER CODE BEGIN ET */
+typedef struct {
+    bool                (*is_controller)(void);
+    bool                (*is_plane)(void);
 
+    GY6500_Data_t       imu_data;
+    GY6500_Calib_t      imu_calib;
+    GY273_RawData_t     mag_data;
+    GY273_Calib_t       mag_calib;
+    Orientation_t       orientation;
+    float               heading_2d;
+    float               heading_3d;
+    float               compass_heading;
+    uint32_t            delta_time_ms;
+
+    cc1101_t            cc1101;
+    GPS_HandleTypeDef   gps;
+    AppData_t           gui_data;
+
+    volatile bool       flag_gyro_update;
+    volatile bool       flag_transmit;
+    volatile bool       packet_received;
+    volatile bool       flag_waiting_ack;
+} AppContext_t;
+
+extern AppContext_t g_app;
 /* USER CODE END ET */
 
 /* Exported constants --------------------------------------------------------*/
@@ -46,14 +87,19 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#ifndef container_of
+#define container_of(ptr, type, member) \
+    ((type *)((char *)(ptr) - offsetof(type, member)))
+#endif
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/
 void Error_Handler(void);
 
 /* USER CODE BEGIN EFP */
-
+void init_all(void);
+bool is_controller(void);
+bool is_plane(void);
 /* USER CODE END EFP */
 
 /* Private defines -----------------------------------------------------------*/

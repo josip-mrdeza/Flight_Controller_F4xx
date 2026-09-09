@@ -1,4 +1,8 @@
 #include "Drivers/cc1101.h"
+#include "LCD/ssd1315.h"
+#include "LCD/menu_helper.h"
+#include "i2c.h"
+#include <stdio.h>
 
 /* ========================================================================== */
 /*                             INTERNAL FUNCTIONS                             */
@@ -132,6 +136,36 @@ HAL_StatusTypeDef CC1101_Init(cc1101_t *dev) {
     dev->dma_busy = false;
 
     return HAL_OK;
+}
+
+HAL_StatusTypeDef CC1101_InitDevice(cc1101_t *dev, SPI_HandleTypeDef *hspi)
+{
+	if (dev == NULL || hspi == NULL) {
+		return HAL_ERROR;
+	}
+
+	char buff[32];
+	Menu_Draw();
+	snprintf(buff, sizeof(buff), "Init CC1101: ...");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+
+	dev->hspi      = hspi;
+	dev->cs_port   = GPIOD;
+	dev->cs_pin    = GPIO_PIN_2;
+	dev->gdo0_port = GPIOB;
+	dev->gdo0_pin  = GPIO_PIN_3;
+	dev->gdo2_port = GPIOB;
+	dev->gdo2_pin  = GPIO_PIN_4;
+
+	HAL_StatusTypeDef status = CC1101_Init(dev);
+	dev->initok = (status == HAL_OK) ? 1 : 0;
+
+	snprintf(buff, sizeof(buff), "Init CC1101: %s", (status == HAL_OK) ? "Ok" : "Fail");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+
+	return status;
 }
 
 void CC1101_SetRX(cc1101_t *dev) {

@@ -18,39 +18,47 @@ static void SSD1315_WriteCommand(I2C_HandleTypeDef *hi2c, uint8_t byte) {
 	HAL_I2C_Mem_Write(hi2c, SSD1315_I2C_ADDR, 0x00, 1, &byte, 1, HAL_MAX_DELAY);
 }
 
-uint8_t SSD1315_Init(I2C_HandleTypeDef *hi2c) {
+HAL_StatusTypeDef SSD1315_Init(I2C_HandleTypeDef *hi2c) {
+	if (hi2c == NULL) {
+		return HAL_ERROR;
+	}
 	HAL_Delay(100);
 
-	SSD1315_WriteCommand(hi2c, 0xAE); // Turn display off
-	SSD1315_WriteCommand(hi2c, 0xD5); // Set display clock divide ratio/oscillator frequency
+	if (HAL_I2C_IsDeviceReady(hi2c, SSD1315_I2C_ADDR, 2, 50) != HAL_OK) {
+		return HAL_ERROR;
+	}
+
+	SSD1315_WriteCommand(hi2c, 0xAE);
+	SSD1315_WriteCommand(hi2c, 0xD5);
 	SSD1315_WriteCommand(hi2c, 0x80);
-	SSD1315_WriteCommand(hi2c, 0xA8); // Set multiplex ratio
+	SSD1315_WriteCommand(hi2c, 0xA8);
 	SSD1315_WriteCommand(hi2c, SSD1315_HEIGHT - 1);
-	SSD1315_WriteCommand(hi2c, 0xD3); // Set display offset
+	SSD1315_WriteCommand(hi2c, 0xD3);
 	SSD1315_WriteCommand(hi2c, 0x00);
-	SSD1315_WriteCommand(hi2c, 0x40); // Set display start line
-	SSD1315_WriteCommand(hi2c, 0x8D); // Charge pump command
-	SSD1315_WriteCommand(hi2c, 0x14); // Enable charge pump
-	SSD1315_WriteCommand(hi2c, 0x20); // Set memory addressing mode
-	SSD1315_WriteCommand(hi2c, 0x00); // Horizontal addressing mode
-	SSD1315_WriteCommand(hi2c, 0xA1); // Set segment re-map (Column 127 is mapped to SEG0)
-	SSD1315_WriteCommand(hi2c, 0xC8); // Set COM Output Scan Direction
-	SSD1315_WriteCommand(hi2c, 0xDA); // Set COM pins hardware configuration
-	SSD1315_WriteCommand(hi2c, 0x12);
-	SSD1315_WriteCommand(hi2c, 0x81); // Set contrast control
-	SSD1315_WriteCommand(hi2c, 0xCF);
-	SSD1315_WriteCommand(hi2c, 0xD9); // Set pre-charge period
-	SSD1315_WriteCommand(hi2c, 0xF1);
-	SSD1315_WriteCommand(hi2c, 0xDB); // Set VCOMH deselect level
 	SSD1315_WriteCommand(hi2c, 0x40);
-	SSD1315_WriteCommand(hi2c, 0xA4); // Entire display on (Resume to RAM content)
-	SSD1315_WriteCommand(hi2c, 0xA6); // Set normal display (not inverted)
-	SSD1315_WriteCommand(hi2c, 0xAF); // Turn display on
+	SSD1315_WriteCommand(hi2c, 0x8D);
+	SSD1315_WriteCommand(hi2c, 0x14);
+	SSD1315_WriteCommand(hi2c, 0x20);
+	SSD1315_WriteCommand(hi2c, 0x00);
+	SSD1315_WriteCommand(hi2c, 0xA1);
+	SSD1315_WriteCommand(hi2c, 0xC8);
+	SSD1315_WriteCommand(hi2c, 0xDA);
+	SSD1315_WriteCommand(hi2c, 0x12);
+	SSD1315_WriteCommand(hi2c, 0x81);
+	SSD1315_WriteCommand(hi2c, 0xCF);
+	SSD1315_WriteCommand(hi2c, 0xD9);
+	SSD1315_WriteCommand(hi2c, 0xF1);
+	SSD1315_WriteCommand(hi2c, 0xDB);
+	SSD1315_WriteCommand(hi2c, 0x40);
+	SSD1315_WriteCommand(hi2c, 0xA4);
+	SSD1315_WriteCommand(hi2c, 0xA6);
+	SSD1315_WriteCommand(hi2c, 0xAF);
 
 	SSD1315_Clear();
+	SSD1315_Line_1("Initializing...");
 	SSD1315_UpdateScreen(hi2c);
 
-	return 1; // Success
+	return HAL_OK;
 }
 
 // Clear the screen buffer

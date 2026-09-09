@@ -1,4 +1,9 @@
 #include "Drivers/gy6500.h"
+#include "Drivers/gy273.h"
+#include "LCD/ssd1315.h"
+#include "i2c.h"
+#include "main.h"
+#include <stdio.h>
 
 #define REG_PWR_MGMT_1    0x6B
 #define REG_ACCEL_XOUT_H  0x3B
@@ -13,10 +18,20 @@
 
 HAL_StatusTypeDef GY6500_Init(I2C_HandleTypeDef *hi2c) {
 	uint8_t pwr_mgmt = 0x00;
-	return HAL_I2C_Mem_Write(hi2c, GY6500_I2C_ADDR, REG_PWR_MGMT_1, 1, &pwr_mgmt, 1, 100);
+	HAL_StatusTypeDef status = HAL_I2C_Mem_Write(hi2c, GY6500_I2C_ADDR, REG_PWR_MGMT_1, 1, &pwr_mgmt, 1, 100);
+	char buff[32];
+	snprintf(buff, sizeof(buff), "Init GY6500: %s", (status == HAL_OK) ? "OK" : "FAIL");
+	SSD1315_Line_2(buff);
+	SSD1315_UpdateScreen(hi2c);
+	return status;
 }
 
 HAL_StatusTypeDef GY6500_Calibrate(I2C_HandleTypeDef *hi2c, GY6500_Calib_t *cal, uint16_t samples) {
+	char buff[32];
+	snprintf(buff, sizeof(buff), "Calib GY6500: ...");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(hi2c);
+
 	float sum_ax = 0, sum_ay = 0, sum_az = 0;
 	float sum_gx = 0, sum_gy = 0, sum_gz = 0;
 	uint8_t buffer[14];
@@ -25,6 +40,9 @@ HAL_StatusTypeDef GY6500_Calibrate(I2C_HandleTypeDef *hi2c, GY6500_Calib_t *cal,
 
 	for (uint16_t i = 0; i < samples; i++) {
 		if (HAL_I2C_Mem_Read(hi2c, GY6500_I2C_ADDR, REG_ACCEL_XOUT_H, 1, buffer, 14, 100) != HAL_OK) {
+			snprintf(buff, sizeof(buff), "Calib GY6500: FAIL");
+			SSD1315_Line_1(buff);
+			SSD1315_UpdateScreen(hi2c);
 			return HAL_ERROR;
 		}
 
@@ -45,6 +63,10 @@ HAL_StatusTypeDef GY6500_Calibrate(I2C_HandleTypeDef *hi2c, GY6500_Calib_t *cal,
 	cal->gx_offset = sum_gx / samples;
 	cal->gy_offset = sum_gy / samples;
 	cal->gz_offset = sum_gz / samples;
+
+	snprintf(buff, sizeof(buff), "Calib GY6500: Ok");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(hi2c);
 
 	return HAL_OK;
 }
@@ -135,14 +157,28 @@ GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY
 Orientation_t Get_Orientation_Accel(float ax, float ay, float az) {
     Orientation_t ori;
 
-    // Roll: rotation around X axis (-PI to +PI)
     ori.roll_rad = atan2f(ay, az);
-
-    // Pitch: rotation around Y axis (-PI/2 to +PI/2)
     ori.pitch_rad = atan2f(-ax, sqrtf(ay * ay + az * az));
 
     ori.roll_deg  = ori.roll_rad * (180.0f / M_PI);
     ori.pitch_deg = ori.pitch_rad * (180.0f / M_PI);
 
     return ori;
+}
+
+void Gyro_update_data(void)
+{
+	if (!g_app.flag_gyro_update || (g_app.is_controller && g_app.is_controller())) {
+		return;
+	}
+	g_app.flag_gyro_update = false;
+	g_app.delta_time_ms = (HAL_GetTick() - g_app.imu_data.last_tick);
+	g_app.imu_data = GY6500_Poll(&hi2c3, &g_app.imu_calib, &g_app.imu_data);
+	g_app.mag_data = GY273_PollRaw(&hi2c3);
+	g_app.heading_2d = GY273_GetHeading2D(&g_app.mag_data, &g_app.mag_calib);
+
+	float roll = g_app.imu_data.roll * ((float)M_PI / 180.0f);
+	float pitch = g_app.imu_data.pitch * ((float)M_PI / 180.0f);
+	g_app.heading_3d = GY273_GetHeading3D(&g_app.mag_data, &g_app.mag_calib, roll, pitch);
+	g_app.orientation = Get_Orientation_Accel(g_app.imu_data.accel_x, g_app.imu_data.accel_y, g_app.imu_data.accel_z);
 }

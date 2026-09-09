@@ -133,17 +133,18 @@ uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms);
 extern void Data_Processing(void);
 
 extern void LoraInit(void);
+extern HAL_StatusTypeDef DX_LR30_Init(void);
+extern _Bool DX_LR30_Ping(void);
 
 extern void gpio_init(void);
 
+extern void Radio_process(void);
 extern void LoraDataSend(uint8_t *data,uint8_t len);
 extern void DX_Lora_RadioIrqProcess(void);
 
 extern RadioOperatingModes_t sx1262GetOperatingMode(void);
 
 extern void sx1262SetOperatingMode(RadioOperatingModes_t mode);
-
-
 
 #endif
 

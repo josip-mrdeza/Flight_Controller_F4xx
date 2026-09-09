@@ -12,6 +12,10 @@ static uint8_t lcd_addr = 0;
 #define LCD_CMD  0
 #define LCD_DATA 1
 
+static void lcd_write_nibble(uint8_t nibble, uint8_t mode);
+void lcd_write_byte(uint8_t byte, uint8_t mode);
+void lcd_cmd(uint8_t cmd);
+
 void lcd_print(char* ptr, uint8_t line)
 {
 	lcd_set_cursor(0, line);

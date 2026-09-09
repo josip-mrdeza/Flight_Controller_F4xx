@@ -160,6 +160,7 @@ typedef struct {
  * @return HAL_StatusTypeDef
  */
 HAL_StatusTypeDef CC1101_Init(cc1101_t *dev);
+HAL_StatusTypeDef CC1101_InitDevice(cc1101_t *dev, SPI_HandleTypeDef *hspi);
 
 /**
  * @brief  Resets the CC1101 via SPI strobe

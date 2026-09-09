@@ -15,6 +15,8 @@
 #include <string.h>
 #include <stdlib.h>
 #include "LCD/menu_helper.h"
+#include "usbd_cdc_if.h"
+#include "i2c.h"
 
 
 static volatile uint8_t g_lora_test_rxs;
@@ -201,6 +203,28 @@ _Bool DX_LR30_Ping(void)
 
 	return false; // SPI or Power Failure
 }
+
+HAL_StatusTypeDef DX_LR30_Init(void)
+{
+	char buff[32];
+	Menu_Draw();
+	snprintf(buff, sizeof(buff), "[DX-LR30-900MHz]");
+	SSD1315_Title(buff);
+	snprintf(buff, sizeof(buff), "Init DX-LR30: ...");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+
+	LoraInit();
+	HAL_Delay(25);
+	_Bool status = DX_LR30_Ping();
+
+	snprintf(buff, sizeof(buff), "Init DX-LR30: %s", status ? "Ok" : "Fail");
+	SSD1315_Line_1(buff);
+	SSD1315_UpdateScreen(&hi2c3);
+
+	return status ? HAL_OK : HAL_ERROR;
+}
+
 void set_LoraPacketParams(uint8_t size)
 {
 
@@ -260,9 +284,10 @@ void OnTxDone(void)
 	//Menu_Draw();
 	if(!display_off)
 	{
+		AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
 		char buff[24];
 		memset(buff, 0, 24);
-		sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane  ");
+		sprintf(buff, "[TX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane  ");
 		SSD1315_Title(buff);
 		sprintf(buff, "DtR: %.2f B/s          ", approxDataTransferSpeed);
 		SSD1315_Line_1(buff);
@@ -358,8 +383,9 @@ void Data_Processing(void)
 	if(g_lora_tx_done == true && g_lora_test_rxs == true)
 	{
 #if !TEST
+		AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
 		char buff[255];
-		if(*menu_data.data->is_controller_ptr)
+		if(app->is_controller && app->is_controller())
 		{
 			//controller
 			snprintf(buff, sizeof(buff), "controller data mock");
@@ -490,7 +516,6 @@ void DX_Lora_RadioIrqProcess(void)
 				(radioFlag & SX126X_IRQ_CRC_ERROR)    ||
 				(radioFlag & SX126X_IRQ_TIMEOUT))
 		{
-			// Reset RX mode if a bad/partial packet was caught during boot
 			RxError();
 			menu_data.waiting_ack = 0;
 			LoraOpenRXMode(0xFFFFFF);
@@ -498,4 +523,20 @@ void DX_Lora_RadioIrqProcess(void)
 
 	}
 
+}
+
+void Radio_process(void)
+{
+	if (menu_data.flag_reset_transmit) {
+		menu_data.flag_reset_transmit = 0;
+		g_app.flag_transmit = true;
+		menu_data.waiting_ack = 0;
+		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
+	}
+	if (g_app.flag_transmit && !menu_data.waiting_ack) {
+		g_app.flag_transmit = false;
+		HAL_TIM_Base_Stop_IT(&htim3);
+		Data_Processing();
+	}
+	DX_Lora_RadioIrqProcess();
 }

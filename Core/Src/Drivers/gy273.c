@@ -1,4 +1,6 @@
 #include "Drivers/gy273.h"
+#include "LCD/ssd1315.h"
+#include <stdio.h>
 
 #define REG_CONTROL_1     0x09
 #define REG_SET_RESET     0x0B
@@ -12,13 +14,24 @@ HAL_StatusTypeDef GY273_Init(I2C_HandleTypeDef *hi2c) {
     HAL_StatusTypeDef status;
     uint8_t set_reset = 0x01;
 
-    // Set/Reset Period Register (0x0B)
     status = HAL_I2C_Mem_Write(hi2c, GY273_I2C_ADDR, REG_SET_RESET, 1, &set_reset, 1, 100);
-    if (status != HAL_OK) return status;
+    if (status != HAL_OK) {
+        char buff[32];
+        snprintf(buff, sizeof(buff), "Init GY273: FAIL");
+        SSD1315_Line_3(buff);
+        SSD1315_UpdateScreen(hi2c);
+        return status;
+    }
 
-    // Control Register 1 (0x09): Continuous Mode | 100Hz ODR | 8G Range | 512 OSR
     uint8_t config = 0x1D;
-    return HAL_I2C_Mem_Write(hi2c, GY273_I2C_ADDR, REG_CONTROL_1, 1, &config, 1, 100);
+    status = HAL_I2C_Mem_Write(hi2c, GY273_I2C_ADDR, REG_CONTROL_1, 1, &config, 1, 100);
+
+    char buff[32];
+    snprintf(buff, sizeof(buff), "Init GY273: %s", (status == HAL_OK) ? "OK" : "FAIL");
+    SSD1315_Line_3(buff);
+    SSD1315_UpdateScreen(hi2c);
+
+    return status;
 }
 
 GY273_RawData_t GY273_PollRaw(I2C_HandleTypeDef *hi2c) {
