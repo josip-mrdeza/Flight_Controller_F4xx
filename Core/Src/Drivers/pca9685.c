@@ -1,15 +1,27 @@
 #include "Drivers/pca9685.h"
+#include "LCD/ssd1315.h"
+#include <stdio.h>
 
 HAL_StatusTypeDef PCA9685_Init(I2C_HandleTypeDef *hi2c, float freq_hz) {
     HAL_StatusTypeDef status;
-
-    // Reset MODE1 register (Auto-Increment enabled: 0x20)
     uint8_t mode1 = 0x20;
     status = HAL_I2C_Mem_Write(hi2c, PCA9685_I2C_ADDR, PCA9685_MODE1, 1, &mode1, 1, 100);
-    if (status != HAL_OK) return status;
+    if (status != HAL_OK) {
+        char buff[32];
+        snprintf(buff, sizeof(buff), "Init pca9685: Fail");
+        SSD1315_Line_3(buff);
+        SSD1315_UpdateScreen(hi2c);
+        HAL_Delay(1000);
+        return status;
+    }
 
-    // Set output PWM frequency
-    return PCA9685_SetPWMFrequency(hi2c, freq_hz);
+    status = PCA9685_SetPWMFrequency(hi2c, freq_hz);
+    char buff[32];
+    snprintf(buff, sizeof(buff), "Init pca9685: %s", (status == HAL_OK) ? "Ok" : "Fail");
+    SSD1315_Line_3(buff);
+    SSD1315_UpdateScreen(hi2c);
+    HAL_Delay((status == HAL_OK) ? 50 : 1000);
+    return status;
 }
 
 HAL_StatusTypeDef PCA9685_SetPWMFrequency(I2C_HandleTypeDef *hi2c, float freq_hz) {

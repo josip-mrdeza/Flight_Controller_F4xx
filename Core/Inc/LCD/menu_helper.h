@@ -22,9 +22,9 @@ typedef struct {
 } Menu_data_t;
 extern Menu_data_t menu_data;
 extern _Bool display_off;
-void Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data);
+HAL_StatusTypeDef Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data);
 
-void Menu_Draw();
+void Menu_Draw(void);
 
 
 #endif /* INC_LCD_MENU_HELPER_H_ */

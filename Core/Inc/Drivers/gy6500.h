@@ -54,7 +54,7 @@ HAL_StatusTypeDef GY6500_Calibrate(I2C_HandleTypeDef *hi2c, GY6500_Calib_t *cal,
 
 void GY6500_ResetKinematics(GY6500_Data_t *state);
 
-// Polls IMU, updates state, and handles internal dt calculation via state->last_tick
 GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY6500_Data_t *prev_state);
 Orientation_t Get_Orientation_Accel(float ax, float ay, float az);
-#endif /* DRIVERS_GY6500_GY6500_H_ */
+void Gyro_update_data(void);
+#endif

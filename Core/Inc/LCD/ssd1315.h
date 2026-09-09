@@ -10,13 +10,14 @@
 #define __SSD1315_H__
 
 #include "stm32f4xx_hal.h"
+#include <stdbool.h>
 
 #define SSD1315_I2C_ADDR        (0x3C << 1) //7bit i2c addy
 
 #define SSD1315_WIDTH           128
 #define SSD1315_HEIGHT          64
 
-uint8_t SSD1315_Init(I2C_HandleTypeDef *hi2c);
+HAL_StatusTypeDef SSD1315_Init(I2C_HandleTypeDef *hi2c);
 void SSD1315_UpdateScreen(I2C_HandleTypeDef *hi2c);
 void SSD1315_Clear(void);
 void SSD1315_DrawPixel(uint8_t x, uint8_t y, uint8_t color);
@@ -33,7 +34,6 @@ typedef struct {
     uint8_t selectedItem;
     uint8_t* ptrToUsbBuff;
     uint16_t* ptrToUsbBuffLen;
-    uint8_t* is_controller_ptr;
 } AppData_t;
 
 void SSD1315_DrawChar(uint8_t x, uint8_t y, char c);

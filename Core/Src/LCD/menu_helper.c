@@ -1,13 +1,23 @@
 #include "LCD/menu_helper.h"
+#include "main.h"
+#include <stdio.h>
+#include <string.h>
 Menu_data_t menu_data;
 _Bool display_off;
-void Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data) {
+HAL_StatusTypeDef Menu_Init(I2C_HandleTypeDef *hi2c, AppData_t *data, GY6500_Data_t*  imu_data, Orientation_t* orientation_data) {
+	if (hi2c == NULL || data == NULL || imu_data == NULL || orientation_data == NULL) {
+		return HAL_ERROR;
+	}
 	data->currentState = STATE_INIT;
 	data->selectedItem = 0;
 	menu_data.data = data;
 	menu_data.hi2c = hi2c;
 	menu_data.imu_data = imu_data;
 	menu_data.orientation_data = orientation_data;
+	menu_data.waiting_ack = 0;
+	menu_data.flag_reset_transmit = 0;
+	Menu_Draw();
+	return HAL_OK;
 }
 
 void Menu_Draw() {
@@ -17,21 +27,22 @@ void Menu_Draw() {
 	}
 	char buff[24];
 	SSD1315_Clear();
+	AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
 	int prev_state = menu_data.data->currentState;
 	switch(menu_data.data->currentState) {
 		case STATE_INIT:
 			SSD1315_Title("[INIT]");
 			break;
 		case STATE_RX_RADIO:
-			sprintf(buff, "[RX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			sprintf(buff, "[RX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_TX_RADIO:
-			sprintf(buff, "[TX RADIO] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			sprintf(buff, "[TX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_GYROSCOPE:
-			sprintf(buff, "[GYROSCOPE] - %s", *menu_data.data->is_controller_ptr ? "Controller" : "Plane");
+			sprintf(buff, "[GYROSCOPE] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
 			SSD1315_Title(buff);
 			sprintf(buff, "X:%.1fdeg/%.1fm/s2", menu_data.orientation_data->roll_deg, menu_data.imu_data->accel_x);
 			SSD1315_Line_1(buff);

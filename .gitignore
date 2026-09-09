@@ -1,4 +1,14 @@
 Debug/
+cmake-build-*/
+build/
+*.elf
+*.hex
+*.bin
+*.map
+*.list
 *.o
-*.o
-/Debug
+*.a
+*.d
+*.su
+*.cyclo
+/.settings/

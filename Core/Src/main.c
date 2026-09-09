@@ -22,6 +22,7 @@
 #include "i2c.h"
 #include "spi.h"
 #include "tim.h"
+#include "usart.h"
 #include "usb_device.h"
 #include "gpio.h"
 
@@ -37,6 +38,7 @@
 #include "Drivers/DX-LR30_Driver/sx126x.h"
 #include "Drivers/DX-LR30_Driver/driver_DIO1.h"
 #include "Drivers/DX-LR30_Driver/UserConfig.h"
+#include "Drivers/gy_gps6mv2.h"
 
 /* USER CODE END Includes */
 
@@ -58,28 +60,29 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-AppData_t guiData;
-GY6500_Data_t  imu_data;
-GY6500_Calib_t imu_calib = {0};
-
-GY273_RawData_t   mag_data;
-GY273_Calib_t mag_calib = {
-		.x_offset=6492,
-		.y_offset=-6346,
-		.z_offset=16268
+AppContext_t g_app = {
+    .is_controller    = is_controller,
+    .is_plane         = is_plane,
+    .imu_data         = {0},
+    .imu_calib        = {0},
+    .mag_data         = {0},
+    .mag_calib        = {
+        .x_offset      = 6492.0f,
+        .y_offset      = -6346.0f,
+        .z_offset      = 16268.0f,
+        .is_calibrated = 1
+    },
+    .orientation      = {0},
+    .heading_2d       = 0.0f,
+    .heading_3d       = 0.0f,
+    .compass_heading  = 0.0f,
+    .delta_time_ms    = 0,
+    .gui_data         = {0},
+    .flag_gyro_update = false,
+    .flag_transmit    = false,
+    .packet_received  = false,
+    .flag_waiting_ack = false
 };
-cc1101_t cc1101;
-float          compass_heading = 0.0f;
-uint8_t flag_gyro_update;
-uint8_t ms = 0;
-char buff[24];
-float heading_3d;
-float heading_2d;
-Orientation_t ori;
-uint8_t flag_transmit = 0;
-volatile _Bool packet_received = false;
-uint8_t is_controller = 0; //0-controller, 1-plane
-_Bool flag_waiting_ack = 0;
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -90,147 +93,36 @@ void SystemClock_Config(void);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-_Bool is_plane()
+bool is_controller(void)
 {
-	return !is_controller;
+	return HAL_GPIO_ReadPin(DEF_SWITCH_C_P_GPIO_Port, DEF_SWITCH_C_P_Pin) == GPIO_PIN_SET;
 }
-void init_all()
+
+bool is_plane(void)
 {
-	guiData.is_controller_ptr = &is_controller;
-	Menu_Init(&hi2c3, &guiData, &imu_data, &ori);
+	return !is_controller();
+}
+
+void init_all(void)
+{
 	SSD1315_Init(&hi2c3);
-	Menu_Draw();
-	sprintf(buff, "Initializing...");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	if (GY6500_Init(&hi2c3) != HAL_OK) {
-		sprintf(buff, "Could not init GY6500");
-		SSD1315_Line_2(buff);
-		// Handle GY-6500 init failure
-	}
-	else
-	{
-		sprintf(buff, "Init GY6500: OK");
-		SSD1315_Line_2(buff);
-	}
+	Menu_Init(&hi2c3, &g_app.gui_data, &g_app.imu_data, &g_app.orientation);
 
-	if (GY273_Init(&hi2c3) != HAL_OK) {
-		sprintf(buff, "Could not init GY273");
-		SSD1315_Line_3(buff);
-		// Handle GY-273 init failure
-	}
-	else
-	{
-		sprintf(buff, "Init GY273: OK");
-		SSD1315_Line_3(buff);
-	}
-	Menu_Draw();
-	// 1. Calibrate GY-6500 (KEEP BOARD TOTALLY STILL & FLAT!)
-	sprintf(buff, "Calib GY6500: ...");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	GY6500_Calibrate(&hi2c3, &imu_calib, 50);
-	sprintf(buff, "Calib GY6500: Ok");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	// 2. Calibrate GY-273 (ROTATE SENSOR AROUND IN AIR FOR 5 SECONDS)
-	// (Optional: skip or pass NULL if hardcoding preset offsets on bench)
-	sprintf(buff, "Calib GY-273: ...");
-	SSD1315_Line_2(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	//GY273_AutoCalibrate(&hi2c3, &mag_calib, 10000);
-	sprintf(buff, "Calib GY-273: Ok");
-	SSD1315_Line_2(buff);
-	SSD1315_UpdateScreen(&hi2c3);
+	GY6500_Init(&hi2c3);
+	GY273_Init(&hi2c3);
+	GY6500_Calibrate(&hi2c3, &g_app.imu_calib, 50);
+	PCA9685_Init(&hi2c3, 50.0f);
 
-	int status_pca = PCA9685_Init(&hi2c3, 50.0f);
-	sprintf(buff, "Init pca9685: %s", status_pca == HAL_OK ? "Ok" : "Fail");
-	SSD1315_Line_3(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	if (HAL_I2C_IsDeviceReady(&hi2c3, (0x40 << 1), 2, 100) != HAL_OK) {
-		// I2C communication failed! Check wiring, pull-ups, or address jumpers (A0-A5).
-		//Error_Handler();
-	}
-	HAL_Delay(status_pca == 1 ? 0 : 3000);
 	HAL_TIM_Base_Start_IT(&htim2);
 	HAL_TIM_Base_Start_IT(&htim3);
-	if(!is_controller)
-	{
-		htim4.Init.Period*=2;
+	if (g_app.is_plane()) {
+		htim4.Init.Period *= 2;
 	}
-	SSD1315_UpdateScreen(&hi2c3);
-	Menu_Draw();
-	sprintf(buff, "Init CC1101: ...");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	cc1101.hspi = &hspi3;
-	cc1101.cs_port   = GPIOD;
-	cc1101.cs_pin    = GPIO_PIN_2;
-	cc1101.gdo0_port = GPIOB;
-	cc1101.gdo0_pin  = GPIO_PIN_3;
-	cc1101.gdo2_port = GPIOB; // Optional depending on your needs
-	cc1101.gdo2_pin  = GPIO_PIN_4;       // Optional depending on your needs
-	int radio_status = 1;
-	char buff[24];
-	for(uint8_t i = 1; i < 2 && radio_status != HAL_OK; i++)
-	{
-		sprintf(buff, "[CC1101 - AT:%d]", i);
-		SSD1315_Title(buff);
-		radio_status = CC1101_Init(&cc1101);
-		sprintf(buff, "Init CC1101: %s", radio_status == HAL_OK ? "Ok" : "Fail");
-		SSD1315_Line_1(buff);
-		SSD1315_UpdateScreen(&hi2c3);
-		cc1101.initok = 1;
-	}
-	if(radio_status != HAL_OK)
-	{
-		sprintf(buff, "Failed to init!");
-		SSD1315_Line_2(buff);
-		SSD1315_UpdateScreen(&hi2c3);
-		HAL_Delay(25);
-		cc1101.initok = 0;
-	}
-	radio_status = 0;
-	Menu_Draw();
-	sprintf(buff, "[DX-LR30-900MHz - INIT]");
-	SSD1315_Title(buff);
-	sprintf(buff, "Init DX-LR30: ...");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	LoraInit();
-	HAL_Delay(25);
-	radio_status = DX_LR30_Ping();
-	sprintf(buff, "Init DX-LR30: %s", radio_status ? "Ok" : "Fail");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	HAL_Delay(25);
 
-	Menu_Draw();
-	sprintf(buff, "[CHECKING DEFINTION]");
-	SSD1315_Title(buff);
-	is_controller = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
-	sprintf(buff, "Init as: %s", is_plane() ? "Plane" : "Controller");
-	SSD1315_Line_1(buff);
-	SSD1315_UpdateScreen(&hi2c3);
-	HAL_Delay(100);
+	CC1101_InitDevice(&g_app.cc1101, &hspi3);
+	DX_LR30_Init();
+	GPS_Init(&g_app.gps, &huart1);
 }
-void Gyro_update_data()
-{
-	if(is_controller)
-	{
-		return;
-	}
-	flag_gyro_update = 0;
-	ms = ((HAL_GetTick() - imu_data.last_tick));
-	imu_data = GY6500_Poll(&hi2c3, &imu_calib, &imu_data);
-	mag_data = GY273_PollRaw(&hi2c3);
-	heading_2d = GY273_GetHeading2D(&mag_data, &mag_calib);
-	float roll = imu_data.roll * (M_PI / 180.0f);  // Roll in radians from accelerometer
-	float pitch = imu_data.pitch * (M_PI / 180.0f); // Pitch in radians from accelerometer
-	heading_3d = GY273_GetHeading3D(&mag_data, &mag_calib, roll, pitch);
-	ori = Get_Orientation_Accel(imu_data.accel_x, imu_data.accel_y, imu_data.accel_z);
-}
-
 /* USER CODE END 0 */
 
 /**
@@ -269,6 +161,7 @@ int main(void)
   MX_SPI3_Init();
   MX_TIM3_Init();
   MX_TIM4_Init();
+  MX_USART1_UART_Init();
   /* USER CODE BEGIN 2 */
 	init_all();
 	MX_USB_DEVICE_Init();
@@ -279,37 +172,15 @@ int main(void)
 
 	IrqFired = false;
 	radioFlag = 0x00;
-	char buff[255];
-	long loopnum = 0;
-	display_off = true;
+	display_off = 1;
 	while (1)
 	{
     /* USER CODE END WHILE */
 
     /* USER CODE BEGIN 3 */
-		is_controller = HAL_GPIO_ReadPin(GPIOB, GPIO_PIN_9);
-		if(flag_gyro_update)
-		{
-			Gyro_update_data();
-			//PCA9685_SetServoPulse(&hi2c3, 0, 1500, 50.0f);
-		}
-		if(menu_data.flag_reset_transmit)
-		{
-			menu_data.flag_reset_transmit = 0;
-			flag_transmit = 1;
-			menu_data.waiting_ack = 0;
-			//sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
-			//sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
-			HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, 1);
-		}
-		if((flag_transmit && !menu_data.waiting_ack))
-		{
-			flag_transmit = 0;
-			HAL_TIM_Base_Stop_IT(&htim3);
-			Data_Processing();
-		}
-		DX_Lora_RadioIrqProcess();
-		//sprintf(buff, "I just went through a loop num: %ld\n", ++loopnum);//3x slower cuz of this
+		Gyro_update_data();
+		gps_update_dma();
+		Radio_process();
 	}
   /* USER CODE END 3 */
 }
@@ -362,31 +233,33 @@ void SystemClock_Config(void)
 /* USER CODE BEGIN 4 */
 void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim)
 {
-	if(htim->Instance == TIM2)
+	if (htim->Instance == TIM2)
 	{
-		flag_gyro_update = 1;
+		g_app.flag_gyro_update = true;
 	}
-	else if(htim->Instance == TIM3)
+	else if (htim->Instance == TIM3)
 	{
-		flag_transmit = 1;
+		g_app.flag_transmit = true;
 	}
-	else if(htim->Instance == TIM4)
+	else if (htim->Instance == TIM4)
 	{
 		menu_data.flag_reset_transmit = 1;
 	}
 }
+
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 {
 	/* Check if the interrupt came from the CC1101 GDO0 pin */
-	if (cc1101.initok && GPIO_Pin == cc1101.gdo0_pin) {
+	if (g_app.cc1101.initok && GPIO_Pin == g_app.cc1101.gdo0_pin) {
 		// This function will automatically trigger the DMA RX if in CC1101_STATE_RX
-		CC1101_Interrupt_Handler(&cc1101);
+		CC1101_Interrupt_Handler(&g_app.cc1101);
 	}
 	else if (GPIO_Pin == LORA_DIO1_PIN)
 	{
 		IrqFired = true;
 	}
 }
+
 /**
  * @brief Tx Transfer completed callback.
  * @param  hspi pointer to a SPI_HandleTypeDef structure that contains
@@ -396,9 +269,9 @@ void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
 void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 {
 	/* Check if this is the SPI instance connected to the CC1101 */
-	if (hspi->Instance == cc1101.hspi->Instance) {
+	if (g_app.cc1101.hspi != NULL && hspi->Instance == g_app.cc1101.hspi->Instance) {
 		// Pulls CS high, triggers STX strobe
-		CC1101_DMA_Complete_Callback(&cc1101);
+		CC1101_DMA_Complete_Callback(&g_app.cc1101);
 	}
 }
 
@@ -411,13 +284,13 @@ void HAL_SPI_TxCpltCallback(SPI_HandleTypeDef *hspi)
 void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
 {
 	/* Check if this is the SPI instance connected to the CC1101 */
-	if (hspi->Instance == cc1101.hspi->Instance) {
+	if (g_app.cc1101.hspi != NULL && hspi->Instance == g_app.cc1101.hspi->Instance) {
 		// Pulls CS high, extracts RSSI/LQI, puts module back into RX
-		CC1101_DMA_Complete_Callback(&cc1101);
+		CC1101_DMA_Complete_Callback(&g_app.cc1101);
 
 		// Notify the main loop that a packet is ready in the rx_fifo
-		if (cc1101.state == CC1101_STATE_RX) {
-			packet_received = true;
+		if (g_app.cc1101.state == CC1101_STATE_RX) {
+			g_app.packet_received = true;
 		}
 	}
 }
@@ -429,13 +302,13 @@ void HAL_SPI_TxRxCpltCallback(SPI_HandleTypeDef *hspi)
  */
 void HAL_SPI_ErrorCallback(SPI_HandleTypeDef *hspi)
 {
-	if (hspi->Instance == cc1101.hspi->Instance) {
+	if (g_app.cc1101.hspi != NULL && hspi->Instance == g_app.cc1101.hspi->Instance) {
 		// Handle DMA/SPI errors (e.g., reset CS pin, clear busy flag)
-		HAL_GPIO_WritePin(cc1101.cs_port, cc1101.cs_pin, GPIO_PIN_SET);
-		cc1101.dma_busy = false;
+		HAL_GPIO_WritePin(g_app.cc1101.cs_port, g_app.cc1101.cs_pin, GPIO_PIN_SET);
+		g_app.cc1101.dma_busy = false;
 
 		// Re-initialize or reset state to ensure system recovers
-		CC1101_SetRX(&cc1101);
+		CC1101_SetRX(&g_app.cc1101);
 	}
 }
 /* USER CODE END 4 */
