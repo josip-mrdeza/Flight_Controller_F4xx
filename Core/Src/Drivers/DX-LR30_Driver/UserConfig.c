@@ -8,12 +8,12 @@
 #include "Drivers/DX-LR30_Driver/UserConfig.h"
 #include "Drivers/DX-LR30_Driver/sx126x.h"
 #include "Drivers/DX-LR30_Driver/sx126x_hal.h"
+#include "Drivers/DX-LR30_Driver/adr.h"
 #include <string.h>
 #include <stdlib.h>
 #include "LCD/menu_helper.h"
 #include "usbd_cdc_if.h"
 #include "i2c.h"
-
 
 static volatile uint8_t g_lora_test_rxs;
 static volatile uint8_t g_lora_tx_done;
@@ -31,17 +31,12 @@ sx126x_irq_mask_t radioFlag = 0;
 
 static volatile RadioOperatingModes_t OperatingMode;
 volatile uint32_t LORA_SX126x_SYMBOL_TIMEOUT = 0;
-void LoraOpenRXMode(uint8_t Timerout);
-
+void LoraOpenRXMode(uint32_t Timerout);
 
 void SetTxHz(uint16_t HZ)
 {
-	sx126x_set_rf_freq(NULL,HZ * 1000000);
-
+	sx126x_set_rf_freq(NULL, HZ * 1000000);
 }
-
-
-
 
 RadioOperatingModes_t sx1262GetOperatingMode(void)
 {
@@ -53,151 +48,110 @@ void sx1262SetOperatingMode(RadioOperatingModes_t mode)
 	OperatingMode = mode;
 }
 
-
-
 void RxEn(void)
 {
-
 	HAL_GPIO_WritePin(LCC68_RXEN_PORT, LCC68_RXEN_PIN, GPIO_PIN_SET);
 	HAL_GPIO_WritePin(LCC68_TXEN_PORT, LCC68_TXEN_PIN, GPIO_PIN_RESET);
-
 }
+
 void TxEn(void)
 {
-
 	HAL_GPIO_WritePin(LCC68_RXEN_PORT, LCC68_RXEN_PIN, GPIO_PIN_RESET);
 	HAL_GPIO_WritePin(LCC68_TXEN_PORT, LCC68_TXEN_PIN, GPIO_PIN_SET);
-
 }
 
-
-
-uint32_t SX126x_CalcSymbolTimeout()
+uint32_t SX126x_CalcSymbolTimeout(void)
 {
-    uint32_t bw_hz = SX126x_BW_Hz(LORA_BW);
-
-    float tSym = (float)(1 << LORA_SF) / (float)bw_hz;  // seconds
+    uint32_t bw_hz = g_adr_profiles[g_adr.current_tier].bw_hz;
+    uint8_t sf = g_adr_profiles[g_adr.current_tier].sf_val;
+    float tSym = (float)(1 << sf) / (float)bw_hz;
+    (void)tSym;
     float timeoutSymbols = LORA_PREAMBLE_LENGTH + 4.25f;
-
     return (uint32_t)(timeoutSymbols);
 }
 
 uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms)
 {
-    uint32_t bw_hz = SX126x_BW_Hz(LORA_BW);
-
-    float tSym_ms = ((float)(1 << LORA_SF) / (float)bw_hz) * 1000.0f;
-
+    uint32_t bw_hz = g_adr_profiles[g_adr.current_tier].bw_hz;
+    uint8_t sf = g_adr_profiles[g_adr.current_tier].sf_val;
+    float tSym_ms = ((float)(1 << sf) / (float)bw_hz) * 1000.0f;
     uint32_t symbols = (uint32_t)(timeout_ms / tSym_ms);
-
-    if(symbols < 1)
-        symbols = 1;
-
+    if(symbols < 1) symbols = 1;
     return symbols;
 }
-
 
 uint32_t SX126x_BW_Hz(uint8_t bw)
 {
     switch(bw)
     {
-        case SX126X_LORA_BW_007:   return 7800;
-        case SX126X_LORA_BW_010:  return 10400;
-        case SX126X_LORA_BW_015:  return 15600;
-        case SX126X_LORA_BW_020:  return 20800;
-        case SX126X_LORA_BW_031:  return 31200;
-        case SX126X_LORA_BW_041:  return 41700;
-        case SX126X_LORA_BW_062:  return 62500;
+        case SX126X_LORA_BW_007: return 7800;
+        case SX126X_LORA_BW_010: return 10400;
+        case SX126X_LORA_BW_015: return 15600;
+        case SX126X_LORA_BW_020: return 20800;
+        case SX126X_LORA_BW_031: return 31200;
+        case SX126X_LORA_BW_041: return 41700;
+        case SX126X_LORA_BW_062: return 62500;
         case SX126X_LORA_BW_125: return 125000;
         case SX126X_LORA_BW_250: return 250000;
         case SX126X_LORA_BW_500: return 500000;
-        default: return 125000; // safe fallback
+        default: return 125000;
     }
 }
-
-
 
 void LoraInit(void)
 {
 	g_lora_test_rxs = false;
 	g_lora_tx_done = true;
 
-	/* IO复位+CS唤醒 模块*/
 	sx126x_reset(NULL);
 	sx126x_wakeup(NULL);
 
-	/* 状态机设定 */
-	/* 进入 STDBY_RC 待机配置模式 */
-	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
-	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_XOSC );
+	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
+	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_XOSC);
 
-	/* 选择内部电压调节器模式 高效DC-DC */
 	sx126x_set_reg_mode(NULL, SX126X_REG_MODE_DCDC);
+	sx126x_set_buffer_base_address(NULL, 0x00, 0x00);
+	sx126x_set_pkt_type(NULL, SX126X_PKT_TYPE_LORA);
+	sx126x_set_trimming_capacitor_values(NULL, 0x4, 0x2f);
 
-	/* 内部FIFO读写地址复位 0x00 */
-	sx126x_set_buffer_base_address(NULL,0x00,0x00);
+	ADR_Init();
+	ADR_ApplyTier(g_adr.current_tier);
 
-	sx126x_set_pkt_type(NULL,SX126X_PKT_TYPE_LORA);
-	sx126x_set_trimming_capacitor_values(NULL,0x4,0x2f);
-
-	sx126x_mod_params_lora_t params;
-	params.bw = SX126X_LORA_BW_500;
-	params.sf = SX126X_LORA_SF7;
-	params.cr = SX126X_LORA_CR_4_6;
-	params.ldro = 0x00;
-	sx126x_set_lora_mod_params(NULL, &params);
-
-	sx126x_pkt_params_lora_t params2;
-	params2.crc_is_on = 0;
-	params2.invert_iq_is_on = 0;
-	params2.pld_len_in_bytes = 0xff;
-	params2.header_type = SX126X_LORA_PKT_EXPLICIT;
-	params2.preamble_len_in_symb = LORA_PREAMBLE_LENGTH;
-	sx126x_set_lora_pkt_params(NULL, &params2);
-
-//    LORA_SX126x_SYMBOL_TIMEOUT =
-//        SX126x_CalcSymbolTimeout();
-
-	sx126x_pa_cfg_params_t  params3;
+	sx126x_pa_cfg_params_t params3;
 	params3.pa_duty_cycle = 0x04;
 	params3.hp_max = 0x07;
 	params3.device_sel = 0x00;
 	params3.pa_lut = 0x01;
 	sx126x_set_pa_cfg(NULL, &params3);
-	//打开dio1的中断 中断触发 SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE
-	sx126x_set_dio_irq_params(NULL, SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE,SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE, SX126X_IRQ_NONE, SX126X_IRQ_NONE);
+
+	sx126x_set_dio_irq_params(NULL, SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE, SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE, SX126X_IRQ_NONE, SX126X_IRQ_NONE);
 	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
-	sx126x_set_tx_params(NULL,22 ,SX126X_RAMP_3400_US);
+	sx126x_set_tx_params(NULL, 22, SX126X_RAMP_3400_US);
 	sx126x_write_register(NULL, 0x08E7, (uint8_t[]){0x38}, 1);
 
-	/* 设置载波频率(频点) */
-	sx126x_set_rf_freq(NULL,LORA_FRE);
+	sx126x_set_rf_freq(NULL, LORA_FRE);
 	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
 
 #if TEST
 	g_lora_test_rxs = true;
 	TxEn();
 #else
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
+	LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 #endif
 }
 
 _Bool DX_LR30_Ping(void)
 {
 	uint8_t sync_word[2] = {0x00, 0x00};
-
-	// Read Register 0x0740 (LoRa Sync Word, length 2 bytes)
-	// Opcode for Read Register is 0x1D
 	sx126x_read_register(NULL, 0x0740, sync_word, 2);
 
-	// Default private network sync word is 0x14 0x24 (or public 0x34 0x44)
 	if ((sync_word[0] == 0x14 && sync_word[1] == 0x24) ||
 			(sync_word[0] == 0x34 && sync_word[1] == 0x44))
 	{
-		return true; // SPI IS WORKING & RADIO IS ALIVE!
+		return true;
 	}
 
-	return false; // SPI or Power Failure
+	return false;
 }
 
 HAL_StatusTypeDef DX_LR30_Init(void)
@@ -223,7 +177,6 @@ HAL_StatusTypeDef DX_LR30_Init(void)
 
 void set_LoraPacketParams(uint8_t size)
 {
-
 	sx126x_pkt_params_lora_t params2;
 	params2.crc_is_on = 0;
 	params2.invert_iq_is_on = 0;
@@ -233,99 +186,130 @@ void set_LoraPacketParams(uint8_t size)
 	sx126x_set_lora_pkt_params(NULL, &params2);
 }
 
-
-void LoraDataSend(uint8_t *data,uint8_t len)
+void LoraDataSend(uint8_t *data, uint8_t len)
 {
 	TxEn();
 	set_LoraPacketParams(len);
 	sx126x_write_buffer(NULL, 0x00, data, len);
-	sx126x_set_tx(NULL,6000);
+	sx126x_set_tx(NULL, 6000);
 	g_lora_tx_done = false;
 	g_lora_test_rxs = false;
 	sx1262SetOperatingMode(MODE_TX);
 }
 
-
-
-
-void LoraOpenRXMode(uint8_t Timerout)
+void LoraOpenRXMode(uint32_t Timerout)
 {
 	g_lora_test_rxs = true;
 
-	// Force Standby to clear modem hardware state
 	sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
-
-	// Clear any stale IRQs left over from boot-time RF preamble hits
 	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
+	set_LoraPacketParams(255);
 
 	RxEn();
-	sx126x_set_rx(NULL, Timerout);
+	if (Timerout == SX126X_RX_CONTINUOUS || Timerout == 0 || Timerout == 0xFFFFFF) {
+		sx126x_set_rx_with_timeout_in_rtc_step(NULL, SX126X_RX_CONTINUOUS);
+	} else {
+		sx126x_set_rx(NULL, Timerout);
+	}
 	sx1262SetOperatingMode(MODE_RX);
 }
 
-
-
-//以下为接收，发送处理
 void OnTxDone(void)
 {    
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
 	tickTransmitEnd = HAL_GetTick();
 	lastTransmitDelay = tickTransmitEnd - tickTransmitStart;
-	approxDataTransferSpeed = lastTransmitLength / (lastTransmitDelay / 1000.0f); //B/s
-	LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
-	menu_data.waiting_ack = 1;
-	HAL_TIM_Base_Start_IT(&htim3);
-	menu_data.data->currentState = STATE_TX_RADIO;
-	//Menu_Draw();
-	if(!display_off)
-	{
-		AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
-		char buff[24];
-		memset(buff, 0, 24);
-		sprintf(buff, "[TX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane  ");
-		SSD1315_Title(buff);
-		sprintf(buff, "DtR: %.2f B/s          ", approxDataTransferSpeed);
-		SSD1315_Line_1(buff);
-		sprintf(buff, "Transferred: %d B", lastTransmitLength);
-		SSD1315_Line_2(buff);
-		memset(buff, 0, 24);
-		sprintf(buff, "Dt: %d ms           ", lastTransmitDelay);
-		SSD1315_Line_3(buff);
-		SSD1315_UpdateScreen(menu_data.hi2c);
+	approxDataTransferSpeed = lastTransmitLength / (lastTransmitDelay / 1000.0f);
+
+	if (is_plane()) {
+		if (g_adr.tier_changed) {
+			ADR_ApplyTier(g_adr.target_tier);
+		} else {
+			LoraOpenRXMode(SX126X_RX_CONTINUOUS);
+		}
+		menu_data.waiting_ack = 0;
+	} else {
+		LoraOpenRXMode(SX126X_RX_CONTINUOUS);
+		menu_data.waiting_ack = 1;
+		htim4.Instance->ARR = g_adr_profiles[g_adr.current_tier].ack_timeout_ms * 2;
+		htim4.Instance->CNT = 0;
+		HAL_TIM_Base_Start_IT(&htim4);
 	}
-	//start waiting for response, if we dont get it in the required time, we reset and try again.
-	HAL_TIM_Base_Start_IT(&htim4);
-//	char buff2[255];
-//	sprintf(buff2, "DtR:%.2f\nTB:%d\nTrPing:%d\n", approxDataTransferSpeed, lastTransmitLength, lastTransmitDelay);
-//	CDC_Transmit_FS(buff2, strlen(buff2));
+
+	menu_data.data->currentState = STATE_TX_RADIO;
+	UpdateMenuADR(STATE_TX_RADIO, 0, 0);
+}
+
+void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
+{
+	if (display_off && !is_plane())
+	{
+		return;
+	}
+
+	static uint32_t last_draw_tick = 0;
+	uint32_t now = HAL_GetTick();
+	if ((now - last_draw_tick) < 100)
+	{
+		return;
+	}
+	last_draw_tick = now;
+
+	char buff[24];
+	SSD1315_Clear();
+	snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, is_controller() ? "Ctrl" : "Plane");
+	SSD1315_Title(buff);
+
+	if (state == STATE_TX_RADIO)
+	{
+		snprintf(buff, sizeof(buff), "DtR: %.2f B/s", approxDataTransferSpeed);
+		SSD1315_Line_1(buff);
+		snprintf(buff, sizeof(buff), "BW: %lukHz", g_adr_profiles[g_adr.current_tier].bw_hz / 1000);
+		SSD1315_Line_2(buff);
+		snprintf(buff, sizeof(buff), "TxDt: %lu ms", lastTransmitDelay);
+		SSD1315_Line_3(buff);
+	}
+	else
+	{
+		snprintf(buff, sizeof(buff), "Ping:%lums", tick_roundTripPing);
+		SSD1315_Line_1(buff);
+		snprintf(buff, sizeof(buff), "RSSI:%ddbm SN:%ddb", rssi, snr);
+		SSD1315_Line_2(buff);
+		snprintf(buff, sizeof(buff), "BW: %lukHz", g_adr_profiles[g_adr.current_tier].bw_hz / 1000);
+		SSD1315_Line_3(buff);
+	}
+
+	SSD1315_UpdateScreen(menu_data.hi2c);
 }
 
 void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 {
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-	HAL_TIM_Base_Stop_IT(&htim4);
-	htim4.Instance->CNT = 0;
-	if (!display_off || is_plane())
-	{
-		auto prev_val = display_off;
-		display_off = 0;
-		menu_data.data->currentState = STATE_RX_RADIO;
-		Menu_Draw();
-		display_off = prev_val;
-		char buff[24];
-		snprintf(buff, sizeof(buff), "RTripPing: %lums", tick_roundTripPing);
-		SSD1315_Line_1(buff);
-//		memcpy(buff, payload, (size < 23) ? size : 23);
-//		buff[(size < 23) ? size : 23] = '\0';
-//		SSD1315_Line_2(buff);
-		snprintf(buff, sizeof(buff), "RSSI: %d dBm", rssi);
-		SSD1315_Line_2(buff);
-		snprintf(buff, sizeof(buff), "SNR: %d dB", snr);
-		SSD1315_Line_3(buff);
-		SSD1315_UpdateScreen(menu_data.hi2c);
+
+	if (is_controller()) {
+		HAL_TIM_Base_Stop_IT(&htim4);
+		htim4.Instance->CNT = 0;
+		menu_data.waiting_ack = 0;
 	}
+
+	uint8_t remote_dr = g_adr.current_tier;
+	char *pdr = strstr((char*)payload, "dr");
+	if (pdr && *(pdr + 2) >= '0' && *(pdr + 2) <= '5') {
+		remote_dr = (uint8_t)(*(pdr + 2) - '0');
+	}
+
+	ADR_ProcessRxMetrics(rssi, snr, remote_dr);
+
+	if (is_controller()) {
+		HAL_TIM_Base_Start_IT(&htim3);
+	} else {
+		Data_Processing();
+	}
+
+	menu_data.data->currentState = STATE_RX_RADIO;
+	UpdateMenuADR(STATE_RX_RADIO, rssi, snr);
 
 	char otg_buff[512];
 	uint16_t copy_len = size;
@@ -343,8 +327,8 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 	float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
 	float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
 
-	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;clt%.6f;clo%.6f;cal%.1f;\r\n",
-	         rssi, snr, clt, clo, cal);
+	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;dr%d;sf%d;bw%lu;clt%.6f;clo%.6f;cal%.1f;\r\n",
+	         rssi, snr, g_adr.current_tier, g_adr_profiles[g_adr.current_tier].sf_val, g_adr_profiles[g_adr.current_tier].bw_hz / 1000, clt, clo, cal);
 	strncat(otg_buff, append_buff, sizeof(otg_buff) - strlen(otg_buff) - 1);
 
 	CDC_Transmit_FS((uint8_t*)otg_buff, (uint16_t)strlen(otg_buff));
@@ -352,22 +336,14 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 
 void RxError(void)
 {
-
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-
-
-
-
 }
 
-void CadDone ( bool channelActivityDetected )
+void CadDone(bool channelActivityDetected)
 {
-
 	g_lora_test_rxs = true;
 	g_lora_tx_done = true;
-
-
 }
 
 void RxTimeout(void)
@@ -375,7 +351,8 @@ void RxTimeout(void)
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
 	menu_data.waiting_ack = false;
-	LoraOpenRXMode(SX126x_TimeoutMs_To_Symbols(100));
+	ADR_OnTimeout();
+	LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 }
 
 void TxTimeout(void)
@@ -383,21 +360,19 @@ void TxTimeout(void)
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
 	menu_data.waiting_ack = false;
-	LoraOpenRXMode(SX126x_TimeoutMs_To_Symbols(100));
+	ADR_OnTimeout();
+	LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 }
 
-
 uint8_t radioRxbuff[255] = {0};
-void Hz_set(char *data,uint8_t len)
+void Hz_set(char *data, uint8_t len)
 {
 	uint32_t num = strtol(data, NULL, 10);
-
 	SetTxHz(num);
 }
 
 void Data_Processing(void)
 {
-
 	if(g_lora_tx_done == true && g_lora_test_rxs == true)
 	{
 #if !TEST
@@ -405,14 +380,13 @@ void Data_Processing(void)
 		char buff[256];
 		if(app->is_controller && app->is_controller())
 		{
-			float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : -1.0f;
-			float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : -1.0f;
-			float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : -1.0f;
-			if(!(clt == -1.0f || clo == -1.0f || cal == -1.0f))
-			{
-				snprintf(buff, sizeof(buff), "clt%.6f;clo%.6f;cal%.1f;\r\n", clt, clo, cal);
-				CDC_Transmit_FS((uint8_t*)buff, (uint16_t)strlen(buff));
-			}
+			float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : 45.815024f;
+			float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
+			float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
+
+			snprintf(buff, sizeof(buff), "ctrl;dr%d;clt%.6f;clo%.6f;cal%.1f;\r\n",
+			         g_adr.target_tier, clt, clo, cal);
+			CDC_Transmit_FS((uint8_t*)buff, (uint16_t)strlen(buff));
 		}
 		else
 		{
@@ -422,7 +396,7 @@ void Data_Processing(void)
 			uint8_t sats = g_app.gps.data.satellites;
 
 			snprintf(buff, sizeof(buff),
-					"idRaptorx0;"
+					"idRaptorx0;dr%d;"
 					"lt%.6f;lo%.6f;al%.1f;sa%d;"
 					"vx%.2f;vy%.2f;vz%.2f;"
 					"ax%.2f;ay%.2f;az%.2f;"
@@ -430,6 +404,7 @@ void Data_Processing(void)
 					"tm%.1f;pr%.2f;"
 					"vb%.2f;ib%.2f;"
 					"vs%.2f;is%.2f;\r\n",
+					g_adr.target_tier,
 					lat, lon, alt, sats,
 					g_app.imu_data.vel_x, g_app.imu_data.vel_y, g_app.imu_data.vel_z,
 					g_app.imu_data.accel_x, g_app.imu_data.accel_y, g_app.imu_data.accel_z,
@@ -442,123 +417,113 @@ void Data_Processing(void)
 					-1.0f, -1.0f,
 					-1.0f, -1.0f);
 		}
-		tickTransmitStart = HAL_GetTick(); //ms
+		tickTransmitStart = HAL_GetTick();
 		uint8_t len = (uint8_t) strlen(buff);
 		lastTransmitLength = len;
-		LoraDataSend((uint8_t *)buff, len); //send response
+		LoraDataSend((uint8_t *)buff, len);
 #else
 		uint8_t mydata[SIZE_DATA] = {0};
 		uint8_t len = queueDequeue(pUart1RxQueue, &mydata);
-		Hz_set((char *)mydata,len);
+		Hz_set((char *)mydata, len);
 #endif
 	}
 }
 
-
-
-
-
 void DX_Lora_RadioIrqProcess(void)
 {
-	//Fix for the receiver not receiving if the transmitter if init'ed before the receiver. 1
 	if(IrqFired || (HAL_GPIO_ReadPin(LCC68_DIO1_PORT, LCC68_DIO1_PIN) == GPIO_PIN_SET))
 	{
 		__disable_irq();
 		IrqFired = false;
 		__enable_irq();
-		// Query the SX1262 to see what triggered the IRQ (e.g., RX_DONE, TX_DONE)
-		sx126x_get_irq_status(NULL, &radioFlag);
 
-		// Clear all IRQ flags on the SX1262 module so it can trigger future interrupts
+		sx126x_get_irq_status(NULL, &radioFlag);
 		sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
-		if( ( radioFlag & SX126X_IRQ_TX_DONE ) == SX126X_IRQ_TX_DONE )
+
+		if((radioFlag & SX126X_IRQ_TX_DONE) == SX126X_IRQ_TX_DONE)
 		{
-			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
+			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
 			OnTxDone();
 		}
-		if( ( radioFlag & SX126X_IRQ_RX_DONE ) ==  SX126X_IRQ_RX_DONE )
+		if((radioFlag & SX126X_IRQ_RX_DONE) == SX126X_IRQ_RX_DONE)
 		{
 			menu_data.waiting_ack = 0;
 			tick_roundTripPing = HAL_GetTick() - tickTransmitStart;
-			sx126x_set_standby(NULL,SX126X_STANDBY_CFG_RC );
+			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
 			sx126x_get_rx_buffer_status(NULL, &offset);
 			sx126x_read_buffer(NULL, offset.buffer_start_pointer, radioRxbuff, offset.pld_len_in_bytes);
 			sx126x_get_lora_pkt_status(NULL, &RadioPktStatus);
-			OnRxDone(&radioRxbuff[0],  offset.pld_len_in_bytes, RadioPktStatus.rssi_pkt_in_dbm + RadioPktStatus.snr_pkt_in_db, RadioPktStatus.snr_pkt_in_db);
-			memset(radioRxbuff,0,255);
+			OnRxDone(&radioRxbuff[0], offset.pld_len_in_bytes, RadioPktStatus.rssi_pkt_in_dbm + RadioPktStatus.snr_pkt_in_db, RadioPktStatus.snr_pkt_in_db);
+			memset(radioRxbuff, 0, 255);
 			HAL_GPIO_TogglePin(GPIOB, GPIO_PIN_2);
 		}
 
-		if( ( radioFlag &  SX126X_IRQ_CRC_ERROR ) ==  SX126X_IRQ_CRC_ERROR )
+		if((radioFlag & SX126X_IRQ_CRC_ERROR) == SX126X_IRQ_CRC_ERROR)
 		{
 			menu_data.waiting_ack = 0;
-			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
+			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
 			RxError();
 		}
 
-		if( ( radioFlag &  SX126X_IRQ_CAD_DONE ) ==  SX126X_IRQ_CAD_DONE )
+		if((radioFlag & SX126X_IRQ_CAD_DONE) == SX126X_IRQ_CAD_DONE)
 		{
-			sx126x_set_standby(NULL,SX126X_STANDBY_CFG_RC );
+			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
 			CadDone((radioFlag & SX126X_IRQ_CAD_DETECTED) == SX126X_IRQ_CAD_DETECTED);
 		}
 
 		if((radioFlag & SX126X_IRQ_TIMEOUT) == SX126X_IRQ_TIMEOUT)
 		{
 			menu_data.waiting_ack = 0;
-			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC );
-			if( sx1262GetOperatingMode( ) == MODE_TX )
+			sx126x_set_standby(NULL, SX126X_STANDBY_CFG_RC);
+			if(sx1262GetOperatingMode() == MODE_TX)
 			{
 				TxTimeout();
-
-			}else if( sx1262GetOperatingMode( ) == MODE_RX )
+			}
+			else if(sx1262GetOperatingMode() == MODE_RX)
 			{
 				RxTimeout();
 			}
 		}
 
-		if( ( radioFlag & SX126X_IRQ_PREAMBLE_DETECTED ) == SX126X_IRQ_PREAMBLE_DETECTED )
-		{
-			//__NOP( );
-		}
-
-		if( ( radioFlag & SX126X_IRQ_SYNC_WORD_VALID ) == SX126X_IRQ_SYNC_WORD_VALID )
-		{
-			//__NOP( );
-		}
-
-		if( ( radioFlag & SX126X_IRQ_HEADER_VALID ) == SX126X_IRQ_HEADER_VALID )
-		{
-			//__NOP( );
-		}
-
-		if( ( radioFlag & SX126X_IRQ_HEADER_ERROR ) == SX126X_IRQ_HEADER_ERROR )
-		{
-			menu_data.waiting_ack = 0;
-			RxTimeout();
-		}
-		//Fix for the receiver not receiving if the transmitter if init'ed before the receiver. 2
-		if ((radioFlag & SX126X_IRQ_HEADER_ERROR) ||
-				(radioFlag & SX126X_IRQ_CRC_ERROR)    ||
-				(radioFlag & SX126X_IRQ_TIMEOUT))
+		if((radioFlag & SX126X_IRQ_HEADER_ERROR) ||
+		   (radioFlag & SX126X_IRQ_CRC_ERROR)    ||
+		   (radioFlag & SX126X_IRQ_TIMEOUT))
 		{
 			RxError();
 			menu_data.waiting_ack = 0;
-			LoraOpenRXMode(0xFFFFFF);
+			LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 		}
-
 	}
-
 }
 
 void Radio_process(void)
 {
+	if (is_plane()) {
+		uint32_t now = HAL_GetTick();
+		uint32_t timeout_ms = (uint32_t)g_adr_profiles[g_adr.current_tier].ack_timeout_ms * 3;
+		if (timeout_ms < 1200) {
+			timeout_ms = 1200;
+		}
+		if (g_adr.last_packet_tick == 0) {
+			g_adr.last_packet_tick = now;
+		} else if ((now - g_adr.last_packet_tick) > timeout_ms) {
+			if (g_adr.current_tier < (ADR_PROFILE_COUNT - 1)) {
+				ADR_ApplyTier(g_adr.current_tier + 1);
+			} else {
+				ADR_ApplyTier(0);
+			}
+			g_adr.last_packet_tick = now;
+		}
+	}
 	if (menu_data.flag_reset_transmit) {
 		menu_data.flag_reset_transmit = 0;
-		g_app.flag_transmit = true;
-		menu_data.waiting_ack = 0;
-		HAL_GPIO_WritePin(GPIOB, GPIO_PIN_3, GPIO_PIN_SET);
+		if (is_controller()) {
+			g_app.flag_transmit = true;
+			menu_data.waiting_ack = 0;
+			ADR_OnTimeout();
+		}
 	}
-	if (g_app.flag_transmit && !menu_data.waiting_ack) {
+	if (is_controller() && g_app.flag_transmit && !menu_data.waiting_ack) {
 		g_app.flag_transmit = false;
 		HAL_TIM_Base_Stop_IT(&htim3);
 		Data_Processing();

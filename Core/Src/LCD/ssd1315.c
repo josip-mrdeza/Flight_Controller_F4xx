@@ -6,7 +6,9 @@
 static uint8_t SSD1315_Buffer[SSD1315_WIDTH * SSD1315_HEIGHT / 8];
 
 static void SSD1315_WriteCommand(I2C_HandleTypeDef *hi2c, uint8_t byte) {
-	I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x00, 1, &byte, 1, 100);
+	static uint8_t cmd_buf;
+	cmd_buf = byte;
+	I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x00, 1, &cmd_buf, 1, 50);
 }
 
 HAL_StatusTypeDef SSD1315_Init(I2C_HandleTypeDef *hi2c) {
@@ -57,12 +59,13 @@ void SSD1315_Clear(void) {
 }
 
 void SSD1315_UpdateScreen(I2C_HandleTypeDef *hi2c) {
+	static uint8_t page_cmd[3];
 	for (uint8_t i = 0; i < 8; i++) {
-		SSD1315_WriteCommand(hi2c, 0xB0 + i);
-		SSD1315_WriteCommand(hi2c, 0x00);
-		SSD1315_WriteCommand(hi2c, 0x10);
-
-		I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x40, 1, &SSD1315_Buffer[SSD1315_WIDTH * i], SSD1315_WIDTH, 100);
+		page_cmd[0] = 0xB0 + i;
+		page_cmd[1] = 0x00;
+		page_cmd[2] = 0x10;
+		I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x00, 1, page_cmd, 3, 50);
+		I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x40, 1, &SSD1315_Buffer[SSD1315_WIDTH * i], SSD1315_WIDTH, 50);
 	}
 }
 

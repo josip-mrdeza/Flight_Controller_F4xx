@@ -1,5 +1,6 @@
 #include "LCD/menu_helper.h"
 #include "main.h"
+#include "Drivers/DX-LR30_Driver/adr.h"
 #include <stdio.h>
 #include <string.h>
 Menu_data_t menu_data;
@@ -34,11 +35,11 @@ void Menu_Draw() {
 			SSD1315_Title("[INIT]");
 			break;
 		case STATE_RX_RADIO:
-			sprintf(buff, "[RX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
+			sprintf(buff, "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_TX_RADIO:
-			sprintf(buff, "[TX RADIO] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
+			sprintf(buff, "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_GYROSCOPE:

@@ -114,9 +114,8 @@ void init_all(void)
 	PCA9685_Init(&hi2c3, 50.0f);
 
 	HAL_TIM_Base_Start_IT(&htim2);
-	HAL_TIM_Base_Start_IT(&htim3);
-	if (g_app.is_plane()) {
-		htim4.Init.Period *= 2;
+	if (g_app.is_controller()) {
+		HAL_TIM_Base_Start_IT(&htim3);
 	}
 
 	CC1101_InitDevice(&g_app.cc1101, &hspi3);
@@ -172,7 +171,7 @@ int main(void)
 
 	IrqFired = false;
 	radioFlag = 0x00;
-	display_off = 1;
+	display_off = 0;
 	while (1)
 	{
 		/* USER CODE END WHILE */
