@@ -1,13 +1,12 @@
 #include "LCD/lcd1602_i2c.h"
-
+#include "Drivers/i2c_helper.h"
 #include "stm32f4xx_hal.h"
+
 static I2C_HandleTypeDef *lcd_i2c;
 
 #define LCD_BACKLIGHT 0x08
 #define LCD_ENABLE    0x04
 static uint8_t lcd_addr = 0;
-
-
 
 #define LCD_CMD  0
 #define LCD_DATA 1
@@ -23,24 +22,24 @@ void lcd_print(char* ptr, uint8_t line)
 	while (*ptr)
 		lcd_write_byte(((uint8_t)*ptr++), 1);
 }
-void lcd_clear()
+
+void lcd_clear(void)
 {
 	lcd_cmd(0x01);
 	HAL_Delay(2);
 }
 
-
 static void lcd_write_nibble(uint8_t nibble, uint8_t mode)
 {
 	uint8_t data = nibble | LCD_BACKLIGHT | (mode ? 0x01 : 0x00);
 
-	HAL_I2C_Master_Transmit(lcd_i2c, lcd_addr, &data, 1, 10);
+	I2C_Master_Transmit_DMA(lcd_i2c, lcd_addr, &data, 1, 10);
 
 	data |= LCD_ENABLE;
-	HAL_I2C_Master_Transmit(lcd_i2c, lcd_addr, &data, 1, 10);
+	I2C_Master_Transmit_DMA(lcd_i2c, lcd_addr, &data, 1, 10);
 
 	data &= ~LCD_ENABLE;
-	HAL_I2C_Master_Transmit(lcd_i2c, lcd_addr, &data, 1, 10);
+	I2C_Master_Transmit_DMA(lcd_i2c, lcd_addr, &data, 1, 10);
 
 	HAL_Delay(1);
 }
@@ -60,9 +59,8 @@ void disable_lcd(void)
 {
 	lcd_cmd(0x08);
 
-
-	uint8_t data = 0x00;   // no backlight, no RS, no EN
-	HAL_I2C_Master_Transmit(lcd_i2c, lcd_addr, &data, 1, 10);
+	uint8_t data = 0x00;
+	I2C_Master_Transmit_DMA(lcd_i2c, lcd_addr, &data, 1, 10);
 }
 
 void init_lcd(I2C_HandleTypeDef *hi2c)
@@ -79,12 +77,12 @@ void init_lcd(I2C_HandleTypeDef *hi2c)
 	lcd_write_nibble(0x30, LCD_CMD);
 	HAL_Delay(10);
 
-	lcd_write_nibble(0x20, LCD_CMD); // 4-bit mode
+	lcd_write_nibble(0x20, LCD_CMD);
 
-	lcd_cmd(0x28); // 4-bit, 2-line
-	lcd_cmd(0x0C); // Display ON, cursor OFF
-	lcd_cmd(0x06); // Auto-increment
-	lcd_cmd(0x01); // Clear
+	lcd_cmd(0x28);
+	lcd_cmd(0x0C);
+	lcd_cmd(0x06);
+	lcd_cmd(0x01);
 	HAL_Delay(2);
 }
 

@@ -22,28 +22,41 @@ static float GPS_NMEAToDecimal(const char *raw, char dir);
 HAL_StatusTypeDef GPS_Init(GPS_HandleTypeDef *hgps, UART_HandleTypeDef *huart) {
     if (!hgps || !huart) return HAL_ERROR;
 
+    __HAL_UART_DISABLE_IT(huart, UART_IT_IDLE);
+    HAL_UART_DMAStop(huart);
+
     memset(hgps, 0, sizeof(GPS_HandleTypeDef));
     hgps->huart = huart;
 
-    __HAL_UART_ENABLE_IT(hgps->huart, UART_IT_IDLE);
+    volatile uint32_t tmpreg = huart->Instance->SR;
+    tmpreg = huart->Instance->DR;
+    (void)tmpreg;
+    __HAL_UART_CLEAR_OREFLAG(huart);
+    __HAL_UART_CLEAR_IDLEFLAG(huart);
 
     HAL_StatusTypeDef status = HAL_UART_Receive_DMA(hgps->huart, hgps->dma_rx_buf, GPS_DMA_BUF_SIZE);
+    if (status == HAL_OK) {
+        __HAL_UART_CLEAR_IDLEFLAG(hgps->huart);
+        __HAL_UART_ENABLE_IT(hgps->huart, UART_IT_IDLE);
+    }
 
     char buff[32];
     snprintf(buff, sizeof(buff), "[GPS-NEO6M - INIT]");
     SSD1315_Title(buff);
     snprintf(buff, sizeof(buff), "Init Gps: %s", (status == HAL_OK) ? "Ok" : "Fail");
-    SSD1315_Line_1(buff);
+    if(status != HAL_OK){
+    	HAL_Delay(500);
+    }
+    SSD1315_Line_2(buff);
     SSD1315_UpdateScreen(&hi2c3);
 
     return status;
 }
 
 void GPS_ProcessBuffer(GPS_HandleTypeDef *hgps) {
-    if (!hgps || !hgps->huart) return;
+    if (!hgps || !hgps->huart || !hgps->huart->hdmarx) return;
 
-    /* Calculate current write position in circular buffer */
-    uint16_t wr_ptr = GPS_DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(hgps->huart->hdmarx);
+    uint16_t wr_ptr = (GPS_DMA_BUF_SIZE - __HAL_DMA_GET_COUNTER(hgps->huart->hdmarx)) % GPS_DMA_BUF_SIZE;
 
     while (hgps->rd_ptr != wr_ptr) {
         char c = (char)hgps->dma_rx_buf[hgps->rd_ptr];
@@ -99,6 +112,25 @@ static float GPS_NMEAToDecimal(const char *raw, char dir) {
     return decimal;
 }
 
+static char* next_field(char **cursor) {
+    if (!cursor || !*cursor) return NULL;
+    char *start = *cursor;
+    char *comma = strchr(start, ',');
+    if (comma) {
+        *comma = '\0';
+        *cursor = comma + 1;
+    } else {
+        char *star = strchr(start, '*');
+        if (star) *star = '\0';
+        char *cr = strchr(start, '\r');
+        if (cr) *cr = '\0';
+        char *lf = strchr(start, '\n');
+        if (lf) *lf = '\0';
+        *cursor = NULL;
+    }
+    return start;
+}
+
 static void GPS_ParseSentence(GPS_HandleTypeDef *hgps, char *line) {
     if (strncmp(line, "$GPRMC", 6) == 0 || strncmp(line, "$GNRMC", 6) == 0) {
         GPS_ParseGPRMC(hgps, line);
@@ -112,8 +144,8 @@ static void GPS_ParseGPRMC(GPS_HandleTypeDef *hgps, char *line) {
     strncpy(line_copy, line, sizeof(line_copy) - 1);
     line_copy[sizeof(line_copy) - 1] = '\0';
 
+    char *cursor = line_copy;
     char *token;
-    char *rest = line_copy;
     int field = 0;
 
     char status = 'V';
@@ -122,26 +154,28 @@ static void GPS_ParseGPRMC(GPS_HandleTypeDef *hgps, char *line) {
     char speed_str[12] = {0};
     char time_str[12] = {0};
 
-    while ((token = strtok_r(rest, ",", &rest))) {
+    while ((token = next_field(&cursor)) != NULL) {
         switch (field) {
             case 1: strncpy(time_str, token, sizeof(time_str) - 1); break;
-            case 2: status = token[0]; break;
+            case 2: status = (token[0] != '\0') ? token[0] : 'V'; break;
             case 3: strncpy(lat_str, token, sizeof(lat_str) - 1); break;
-            case 4: lat_dir = token[0]; break;
+            case 4: lat_dir = (token[0] != '\0') ? token[0] : 'N'; break;
             case 5: strncpy(lon_str, token, sizeof(lon_str) - 1); break;
-            case 6: lon_dir = token[0]; break;
+            case 6: lon_dir = (token[0] != '\0') ? token[0] : 'E'; break;
             case 7: strncpy(speed_str, token, sizeof(speed_str) - 1); break;
             default: break;
         }
         field++;
     }
 
-    if (status == 'A') { /* 'A' = Fix valid */
+    if (status == 'A') {
         hgps->data.is_valid = true;
-        hgps->data.latitude = GPS_NMEAToDecimal(lat_str, lat_dir);
-        hgps->data.longitude = GPS_NMEAToDecimal(lon_str, lon_dir);
-        hgps->data.speed_knots = strtof(speed_str, NULL);
-        hgps->data.speed_kmh = hgps->data.speed_knots * 1.852f;
+        if (strlen(lat_str) > 0) hgps->data.latitude = GPS_NMEAToDecimal(lat_str, lat_dir);
+        if (strlen(lon_str) > 0) hgps->data.longitude = GPS_NMEAToDecimal(lon_str, lon_dir);
+        if (strlen(speed_str) > 0) {
+            hgps->data.speed_knots = strtof(speed_str, NULL);
+            hgps->data.speed_kmh = hgps->data.speed_knots * 1.852f;
+        }
         hgps->last_update_ms = HAL_GetTick();
 
         if (strlen(time_str) >= 6) {
@@ -159,21 +193,40 @@ static void GPS_ParseGPGGA(GPS_HandleTypeDef *hgps, char *line) {
     strncpy(line_copy, line, sizeof(line_copy) - 1);
     line_copy[sizeof(line_copy) - 1] = '\0';
 
+    char *cursor = line_copy;
     char *token;
-    char *rest = line_copy;
     int field = 0;
 
-    while ((token = strtok_r(rest, ",", &rest))) {
+    char lat_str[16] = {0}, lat_dir = 'N';
+    char lon_str[16] = {0}, lon_dir = 'E';
+    char fix_quality = '0';
+    char alt_str[12] = {0};
+    char sats_str[8] = {0};
+
+    while ((token = next_field(&cursor)) != NULL) {
         switch (field) {
-            case 7:
-                hgps->data.satellites = (uint8_t)atoi(token);
-                break;
-            case 9:
-                hgps->data.altitude = strtof(token, NULL);
-                break;
+            case 2: strncpy(lat_str, token, sizeof(lat_str) - 1); break;
+            case 3: lat_dir = (token[0] != '\0') ? token[0] : 'N'; break;
+            case 4: strncpy(lon_str, token, sizeof(lon_str) - 1); break;
+            case 5: lon_dir = (token[0] != '\0') ? token[0] : 'E'; break;
+            case 6: fix_quality = (token[0] != '\0') ? token[0] : '0'; break;
+            case 7: strncpy(sats_str, token, sizeof(sats_str) - 1); break;
+            case 9: strncpy(alt_str, token, sizeof(alt_str) - 1); break;
             default: break;
         }
         field++;
+    }
+
+    if (strlen(sats_str) > 0) {
+        hgps->data.satellites = (uint8_t)atoi(sats_str);
+    }
+
+    if (fix_quality != '0') {
+        hgps->data.is_valid = true;
+        if (strlen(lat_str) > 0) hgps->data.latitude = GPS_NMEAToDecimal(lat_str, lat_dir);
+        if (strlen(lon_str) > 0) hgps->data.longitude = GPS_NMEAToDecimal(lon_str, lon_dir);
+        if (strlen(alt_str) > 0) hgps->data.altitude = strtof(alt_str, NULL);
+        hgps->last_update_ms = HAL_GetTick();
     }
 }
 
@@ -183,14 +236,20 @@ void gps_update_dma(void)
 		return;
 	}
 
+	GPS_ProcessBuffer(&g_app.gps);
+
 	char buff[32];
 	if (g_app.gps.data.is_valid) {
+		if(display_off)
+		{
+			return;
+		}
 		float lat = g_app.gps.data.latitude;
 		float lon = g_app.gps.data.longitude;
 		float alt = g_app.gps.data.altitude;
 
 		display_off = 0;
-		snprintf(buff, sizeof(buff), "[GPS-FIX]");
+		snprintf(buff, sizeof(buff), "[GPS-FIX %d SATS]", g_app.gps.data.satellites);
 		SSD1315_Title(buff);
 		snprintf(buff, sizeof(buff), "lat:%.5f", lat);
 		SSD1315_Line_1(buff);
@@ -199,13 +258,19 @@ void gps_update_dma(void)
 		snprintf(buff, sizeof(buff), "alt:%.2f", alt);
 		SSD1315_Line_3(buff);
 		SSD1315_UpdateScreen(&hi2c3);
-		display_off = 1;
 		return;
 	}
 
-	display_off = 0;
-	snprintf(buff, sizeof(buff), "GPS-FIX:BAD");
+	if(display_off)
+	{
+		return;
+	}
+	snprintf(buff, sizeof(buff), "[GPS:NO LOCK]");
+	SSD1315_Title(buff);
+	snprintf(buff, sizeof(buff), "Sats: %d", g_app.gps.data.satellites);
 	SSD1315_Line_1(buff);
+	snprintf(buff, sizeof(buff), "RxBuf: %u", g_app.gps.rd_ptr);
+	SSD1315_Line_2(buff);
+	SSD1315_Line_3("Searching GPS...");
 	SSD1315_UpdateScreen(&hi2c3);
-	display_off = 1;
 }

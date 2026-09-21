@@ -1,5 +1,6 @@
 #include "Drivers/gy6500.h"
 #include "Drivers/gy273.h"
+#include "Drivers/i2c_helper.h"
 #include "LCD/ssd1315.h"
 #include "i2c.h"
 #include "main.h"
@@ -11,14 +12,16 @@
 #define ACCEL_SCALE_M_S2  (9.80665f / 16384.0f)
 #define GYRO_SCALE_DPS    (1.0f / 131.0f)
 #define GRAVITY_M_S2      9.80665f
+#ifndef M_PI
 #define M_PI              3.14159265358979323846f
+#endif
 
 #define ALPHA                 0.70f
 #define ACCEL_NOISE_DEADBAND  0.10f
 
 HAL_StatusTypeDef GY6500_Init(I2C_HandleTypeDef *hi2c) {
 	uint8_t pwr_mgmt = 0x00;
-	HAL_StatusTypeDef status = HAL_I2C_Mem_Write(hi2c, GY6500_I2C_ADDR, REG_PWR_MGMT_1, 1, &pwr_mgmt, 1, 100);
+	HAL_StatusTypeDef status = I2C_Mem_Write_DMA(hi2c, GY6500_I2C_ADDR, REG_PWR_MGMT_1, 1, &pwr_mgmt, 1, 100);
 	char buff[32];
 	snprintf(buff, sizeof(buff), "Init GY6500: %s", (status == HAL_OK) ? "OK" : "FAIL");
 	SSD1315_Line_2(buff);
@@ -39,7 +42,7 @@ HAL_StatusTypeDef GY6500_Calibrate(I2C_HandleTypeDef *hi2c, GY6500_Calib_t *cal,
 	if (samples == 0) samples = 500;
 
 	for (uint16_t i = 0; i < samples; i++) {
-		if (HAL_I2C_Mem_Read(hi2c, GY6500_I2C_ADDR, REG_ACCEL_XOUT_H, 1, buffer, 14, 100) != HAL_OK) {
+		if (I2C_Mem_Read_DMA(hi2c, GY6500_I2C_ADDR, REG_ACCEL_XOUT_H, 1, buffer, 14, 100) != HAL_OK) {
 			snprintf(buff, sizeof(buff), "Calib GY6500: FAIL");
 			SSD1315_Line_1(buff);
 			SSD1315_UpdateScreen(hi2c);
@@ -85,12 +88,10 @@ GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY
 	GY6500_Data_t data = {0.0f};
 	uint8_t buffer[14];
 
-	// Preserve accumulated state if passed
 	if (prev_state) {
 		data = *prev_state;
 	}
 
-	// Calculate delta time internally using stored last_tick
 	uint32_t current_tick = HAL_GetTick();
 	float dt = 0.0f;
 
@@ -98,10 +99,9 @@ GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY
 		dt = (float)(current_tick - data.last_tick) / 1000.0f;
 	}
 
-	// Store current tick for next call
 	data.last_tick = current_tick;
 
-	if (HAL_I2C_Mem_Read(hi2c, GY6500_I2C_ADDR, REG_ACCEL_XOUT_H, 1, buffer, 14, 100) == HAL_OK) {
+	if (I2C_Mem_Read_DMA(hi2c, GY6500_I2C_ADDR, REG_ACCEL_XOUT_H, 1, buffer, 14, 100) == HAL_OK) {
 		int16_t raw_ax   = (int16_t)((buffer[0] << 8) | buffer[1]);
 		int16_t raw_ay   = (int16_t)((buffer[2] << 8) | buffer[3]);
 		int16_t raw_az   = (int16_t)((buffer[4] << 8) | buffer[5]);
@@ -110,7 +110,6 @@ GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY
 		int16_t raw_gy   = (int16_t)((buffer[10] << 8) | buffer[11]);
 		int16_t raw_gz   = (int16_t)((buffer[12] << 8) | buffer[13]);
 
-		// Calibrated sensor readouts
 		data.accel_x = (raw_ax * ACCEL_SCALE_M_S2) - (cal ? cal->ax_offset : 0.0f);
 		data.accel_y = (raw_ay * ACCEL_SCALE_M_S2) - (cal ? cal->ay_offset : 0.0f);
 		data.accel_z = (raw_az * ACCEL_SCALE_M_S2) - (cal ? cal->az_offset : 0.0f);
@@ -121,7 +120,6 @@ GY6500_Data_t GY6500_Poll(I2C_HandleTypeDef *hi2c, const GY6500_Calib_t *cal, GY
 		data.gyro_y  = (raw_gy * GYRO_SCALE_DPS) - (cal ? cal->gy_offset : 0.0f);
 		data.gyro_z  = (raw_gz * GYRO_SCALE_DPS) - (cal ? cal->gz_offset : 0.0f);
 
-		// Perform integrations only if dt is valid (ignores the very first call)
 		if (dt > 0.0f && dt < 0.2f) {
 			float accel_pitch = atan2f(-data.accel_x, sqrtf(data.accel_y * data.accel_y + data.accel_z * data.accel_z)) * (180.0f / M_PI);
 			float accel_roll  = atan2f(data.accel_y, data.accel_z) * (180.0f / M_PI);

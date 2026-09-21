@@ -34,6 +34,9 @@ extern "C" {
 
 extern I2C_HandleTypeDef hi2c3;
 
+extern DMA_HandleTypeDef hdma_i2c3_rx;
+extern DMA_HandleTypeDef hdma_i2c3_tx;
+
 /* USER CODE BEGIN Private defines */
 
 /* USER CODE END Private defines */

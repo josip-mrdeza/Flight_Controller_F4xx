@@ -1,7 +1,3 @@
-
-
-
-
 #include <stdint.h>
 #include <stdbool.h>
 #include <stdio.h>
@@ -309,27 +305,49 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 {
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
-	//LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
-	//menu_data.data->currentState = STATE_RX_RADIO;
 	HAL_TIM_Base_Stop_IT(&htim4);
-	htim4.Instance->CNT=0; //reset counter
-	if(!display_off)
+	htim4.Instance->CNT = 0;
+	if (!display_off || is_plane())
 	{
+		auto prev_val = display_off;
+		display_off = 0;
+		menu_data.data->currentState = STATE_RX_RADIO;
 		Menu_Draw();
+		display_off = prev_val;
 		char buff[24];
-		sprintf(buff, "RTripPing: %dms   ", tick_roundTripPing);
+		snprintf(buff, sizeof(buff), "RTripPing: %lums", tick_roundTripPing);
 		SSD1315_Line_1(buff);
-		memcpy(buff, payload, 24);
+//		memcpy(buff, payload, (size < 23) ? size : 23);
+//		buff[(size < 23) ? size : 23] = '\0';
+//		SSD1315_Line_2(buff);
+		snprintf(buff, sizeof(buff), "RSSI: %d dBm", rssi);
 		SSD1315_Line_2(buff);
-		memset(buff, 0, 24);
-		sprintf(buff, "RSSI/SNR:%d/%d", rssi, snr);
+		snprintf(buff, sizeof(buff), "SNR: %d dB", snr);
 		SSD1315_Line_3(buff);
 		SSD1315_UpdateScreen(menu_data.hi2c);
 	}
-	//LoraOpenRXMode(LORA_SX126x_SYMBOL_TIMEOUT);
-	//sprintf(buff2, "RTripPing:%d\nRSSI:%d\nSNR:%d\n", tick_roundTripPing, rssi, snr);
-	//CDC_Transmit_FS(buff2, strlen(buff2));
-	CDC_Transmit_FS(payload, size);
+
+	char otg_buff[512];
+	uint16_t copy_len = size;
+	while (copy_len > 0 && (payload[copy_len - 1] == '\r' || payload[copy_len - 1] == '\n' || payload[copy_len - 1] == ' ' || payload[copy_len - 1] == '\0')) {
+		copy_len--;
+	}
+	if (copy_len > sizeof(otg_buff) - 128) {
+		copy_len = sizeof(otg_buff) - 128;
+	}
+	memcpy(otg_buff, payload, copy_len);
+	otg_buff[copy_len] = '\0';
+
+	char append_buff[128];
+	float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : 45.815024f;
+	float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
+	float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
+
+	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;clt%.6f;clo%.6f;cal%.1f;\r\n",
+	         rssi, snr, clt, clo, cal);
+	strncat(otg_buff, append_buff, sizeof(otg_buff) - strlen(otg_buff) - 1);
+
+	CDC_Transmit_FS((uint8_t*)otg_buff, (uint16_t)strlen(otg_buff));
 }
 
 void RxError(void)
@@ -384,43 +402,50 @@ void Data_Processing(void)
 	{
 #if !TEST
 		AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
-		char buff[255];
+		char buff[256];
 		if(app->is_controller && app->is_controller())
 		{
-			//controller
-			snprintf(buff, sizeof(buff), "controller data mock");
+			float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : -1.0f;
+			float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : -1.0f;
+			float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : -1.0f;
+			if(!(clt == -1.0f || clo == -1.0f || cal == -1.0f))
+			{
+				snprintf(buff, sizeof(buff), "clt%.6f;clo%.6f;cal%.1f;\r\n", clt, clo, cal);
+				CDC_Transmit_FS((uint8_t*)buff, (uint16_t)strlen(buff));
+			}
 		}
 		else
 		{
-			//plane
-			snprintf(buff, sizeof(buff), "ax%.2f;ay%.2f;az%.2f;"
+			float lat = g_app.gps.data.is_valid ? g_app.gps.data.latitude : -1.0f;
+			float lon = g_app.gps.data.is_valid ? g_app.gps.data.longitude : -1.0f;
+			float alt = g_app.gps.data.is_valid ? g_app.gps.data.altitude : -1.0f;
+			uint8_t sats = g_app.gps.data.satellites;
+
+			snprintf(buff, sizeof(buff),
+					"idRaptorx0;"
+					"lt%.6f;lo%.6f;al%.1f;sa%d;"
 					"vx%.2f;vy%.2f;vz%.2f;"
-					"gx%.2f;gy%.2f;gz%.2f;"
-					"tm%.2f;"
-					"px%.2f;py%.2f;pz%.2f;"
-					"rx%.2f;ry%.2f;rz%.2f;"
-					"\r\n",
-					menu_data.imu_data->accel_x,
-					menu_data.imu_data->accel_y,
-					menu_data.imu_data->accel_z,
-					menu_data.imu_data->vel_x,
-					menu_data.imu_data->vel_y,
-					menu_data.imu_data->vel_z,
-					menu_data.imu_data->roll,
-					menu_data.imu_data->pitch,
-					menu_data.imu_data->yaw,
-					menu_data.imu_data->pos_x,
-					menu_data.imu_data->pos_y,
-					menu_data.imu_data->pos_z,
-					menu_data.imu_data->roll,
-					menu_data.imu_data->pitch,
-					menu_data.imu_data->yaw,
-					menu_data.imu_data->temp);
+					"ax%.2f;ay%.2f;az%.2f;"
+					"gx%.2f;gy%.2f;gz%.2f;hd%.2f;"
+					"tm%.1f;pr%.2f;"
+					"vb%.2f;ib%.2f;"
+					"vs%.2f;is%.2f;\r\n",
+					lat, lon, alt, sats,
+					g_app.imu_data.vel_x, g_app.imu_data.vel_y, g_app.imu_data.vel_z,
+					g_app.imu_data.accel_x, g_app.imu_data.accel_y, g_app.imu_data.accel_z,
+					g_app.orientation.roll_deg != 0.0f ? g_app.orientation.roll_deg : g_app.imu_data.roll,
+					g_app.orientation.pitch_deg != 0.0f ? g_app.orientation.pitch_deg : g_app.imu_data.pitch,
+					g_app.imu_data.yaw,
+					g_app.heading_3d != 0.0f ? g_app.heading_3d : g_app.heading_2d,
+					g_app.imu_data.temp != 0.0f ? g_app.imu_data.temp : -1.0f,
+					-1.0f,
+					-1.0f, -1.0f,
+					-1.0f, -1.0f);
 		}
 		tickTransmitStart = HAL_GetTick(); //ms
 		uint8_t len = (uint8_t) strlen(buff);
 		lastTransmitLength = len;
-		LoraDataSend((uint8_t *)buff, len);
+		LoraDataSend((uint8_t *)buff, len); //send response
 #else
 		uint8_t mydata[SIZE_DATA] = {0};
 		uint8_t len = queueDequeue(pUart1RxQueue, &mydata);
