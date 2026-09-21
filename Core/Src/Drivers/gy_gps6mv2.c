@@ -240,7 +240,7 @@ void gps_update_dma(void)
 
 	char buff[32];
 	if (g_app.gps.data.is_valid) {
-		if(display_off)
+		if(true)
 		{
 			return;
 		}
@@ -248,7 +248,6 @@ void gps_update_dma(void)
 		float lon = g_app.gps.data.longitude;
 		float alt = g_app.gps.data.altitude;
 
-		display_off = 0;
 		snprintf(buff, sizeof(buff), "[GPS-FIX %d SATS]", g_app.gps.data.satellites);
 		SSD1315_Title(buff);
 		snprintf(buff, sizeof(buff), "lat:%.5f", lat);
@@ -265,12 +264,12 @@ void gps_update_dma(void)
 	{
 		return;
 	}
-	snprintf(buff, sizeof(buff), "[GPS:NO LOCK]");
-	SSD1315_Title(buff);
-	snprintf(buff, sizeof(buff), "Sats: %d", g_app.gps.data.satellites);
-	SSD1315_Line_1(buff);
-	snprintf(buff, sizeof(buff), "RxBuf: %u", g_app.gps.rd_ptr);
-	SSD1315_Line_2(buff);
-	SSD1315_Line_3("Searching GPS...");
-	SSD1315_UpdateScreen(&hi2c3);
+//	snprintf(buff, sizeof(buff), "[GPS:NO LOCK]");
+//	SSD1315_Title(buff);
+//	snprintf(buff, sizeof(buff), "Sats: %d", g_app.gps.data.satellites);
+//	SSD1315_Line_1(buff);
+//	snprintf(buff, sizeof(buff), "RxBuf: %u", g_app.gps.rd_ptr);
+//	SSD1315_Line_2(buff);
+//	SSD1315_Line_3("Searching GPS...");
+//	SSD1315_UpdateScreen(&hi2c3);
 }
