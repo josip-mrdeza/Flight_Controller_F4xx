@@ -19,8 +19,9 @@ HAL_StatusTypeDef GY273_Init(I2C_HandleTypeDef *hi2c) {
     if (status != HAL_OK) {
         char buff[32];
         snprintf(buff, sizeof(buff), "Init GY273: FAIL");
-        SSD1315_Line_3(buff);
+        SSD1315_Line_2(buff);
         SSD1315_UpdateScreen(hi2c);
+        HAL_Delay(1000);
         return status;
     }
 
@@ -29,7 +30,7 @@ HAL_StatusTypeDef GY273_Init(I2C_HandleTypeDef *hi2c) {
 
     char buff[32];
     snprintf(buff, sizeof(buff), "Init GY273: %s", (status == HAL_OK) ? "OK" : "FAIL");
-    SSD1315_Line_3(buff);
+    SSD1315_Line_2(buff);
     SSD1315_UpdateScreen(hi2c);
 
     return status;

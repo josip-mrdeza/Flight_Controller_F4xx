@@ -24,8 +24,12 @@ HAL_StatusTypeDef GY6500_Init(I2C_HandleTypeDef *hi2c) {
 	HAL_StatusTypeDef status = I2C_Mem_Write_DMA(hi2c, GY6500_I2C_ADDR, REG_PWR_MGMT_1, 1, &pwr_mgmt, 1, 100);
 	char buff[32];
 	snprintf(buff, sizeof(buff), "Init GY6500: %s", (status == HAL_OK) ? "OK" : "FAIL");
-	SSD1315_Line_2(buff);
+	SSD1315_Line_1(buff);
 	SSD1315_UpdateScreen(hi2c);
+	if(status != HAL_OK)
+	{
+		HAL_Delay(1000);
+	}
 	return status;
 }
 
