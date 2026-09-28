@@ -33,9 +33,9 @@ static volatile RadioOperatingModes_t OperatingMode;
 volatile uint32_t LORA_SX126x_SYMBOL_TIMEOUT = 0;
 void LoraOpenRXMode(uint32_t Timerout);
 
-void SetTxHz(uint16_t HZ)
+void SetTxHz(float mhz)
 {
-	sx126x_set_rf_freq(NULL, HZ * 1000000);
+	sx126x_set_rf_freq(NULL, (uint16_t) (mhz * 1000000));
 }
 
 RadioOperatingModes_t sx1262GetOperatingMode(void)
@@ -62,8 +62,8 @@ void TxEn(void)
 
 uint32_t SX126x_CalcSymbolTimeout(void)
 {
-    uint32_t bw_hz = g_adr_profiles[g_adr.current_tier].bw_hz;
-    uint8_t sf = g_adr_profiles[g_adr.current_tier].sf_val;
+    uint32_t bw_hz = ADR_GetBW_Hz(g_adr.current_tier);
+    uint8_t sf = ADR_GetSF(g_adr.current_tier);
     float tSym = (float)(1 << sf) / (float)bw_hz;
     (void)tSym;
     float timeoutSymbols = LORA_PREAMBLE_LENGTH + 4.25f;
@@ -72,8 +72,8 @@ uint32_t SX126x_CalcSymbolTimeout(void)
 
 uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms)
 {
-    uint32_t bw_hz = g_adr_profiles[g_adr.current_tier].bw_hz;
-    uint8_t sf = g_adr_profiles[g_adr.current_tier].sf_val;
+    uint32_t bw_hz = ADR_GetBW_Hz(g_adr.current_tier);
+    uint8_t sf = ADR_GetSF(g_adr.current_tier);
     float tSym_ms = ((float)(1 << sf) / (float)bw_hz) * 1000.0f;
     uint32_t symbols = (uint32_t)(timeout_ms / tSym_ms);
     if(symbols < 1) symbols = 1;
@@ -232,7 +232,7 @@ void OnTxDone(void)
 	} else {
 		LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 		menu_data.waiting_ack = 1;
-		htim4.Instance->ARR = g_adr_profiles[g_adr.current_tier].ack_timeout_ms * 2;
+		htim4.Instance->ARR = ADR_GetAckTimeoutMs(g_adr.current_tier) * 2;
 		htim4.Instance->CNT = 0;
 		HAL_TIM_Base_Start_IT(&htim4);
 	}
@@ -256,16 +256,16 @@ void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
 	}
 	last_draw_tick = now;
 
-	char buff[24];
+	char buff[32];
 	SSD1315_Clear();
-	snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, is_controller() ? "Ctrl" : "Plane");
+	snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)ADR_GetSF(g_adr.current_tier), is_controller() ? "Ctrl" : "Plane");
 	SSD1315_Title(buff);
 
 	if (state == STATE_TX_RADIO)
 	{
 		snprintf(buff, sizeof(buff), "DtR: %.2f B/s", approxDataTransferSpeed);
 		SSD1315_Line_1(buff);
-		snprintf(buff, sizeof(buff), "BW: %lukHz", g_adr_profiles[g_adr.current_tier].bw_hz / 1000);
+		snprintf(buff, sizeof(buff), "BW: %lukHz", (unsigned long)ADR_GetBW_kHz(g_adr.current_tier));
 		SSD1315_Line_2(buff);
 		snprintf(buff, sizeof(buff), "TxDt: %lu ms", lastTransmitDelay);
 		SSD1315_Line_3(buff);
@@ -276,7 +276,7 @@ void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
 		SSD1315_Line_1(buff);
 		snprintf(buff, sizeof(buff), "RSSI:%ddbm SN:%ddb", rssi, snr);
 		SSD1315_Line_2(buff);
-		snprintf(buff, sizeof(buff), "BW: %lukHz", g_adr_profiles[g_adr.current_tier].bw_hz / 1000);
+		snprintf(buff, sizeof(buff), "BW: %lukHz", (unsigned long)ADR_GetBW_kHz(g_adr.current_tier));
 		SSD1315_Line_3(buff);
 	}
 
@@ -296,8 +296,8 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 
 	uint8_t remote_dr = g_adr.current_tier;
 	char *pdr = strstr((char*)payload, "dr");
-	if (pdr && *(pdr + 2) >= '0' && *(pdr + 2) <= '5') {
-		remote_dr = (uint8_t)(*(pdr + 2) - '0');
+	if (pdr) {
+		remote_dr = (uint8_t)strtol(pdr + 2, NULL, 10);
 	}
 
 	ADR_ProcessRxMetrics(rssi, snr, remote_dr);
@@ -327,8 +327,8 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 	float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
 	float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
 
-	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;dr%d;sf%d;bw%lu;clt%.6f;clo%.6f;cal%.1f;\r\n",
-	         rssi, snr, g_adr.current_tier, g_adr_profiles[g_adr.current_tier].sf_val, g_adr_profiles[g_adr.current_tier].bw_hz / 1000, clt, clo, cal);
+	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;dr%d;sf%d;bw%u;clt%.6f;clo%.6f;cal%.1f;\r\n",
+	         rssi, snr, g_adr.current_tier, ADR_GetSF(g_adr.current_tier), ADR_GetBW_kHz(g_adr.current_tier), clt, clo, cal);
 	strncat(otg_buff, append_buff, sizeof(otg_buff) - strlen(otg_buff) - 1);
 
 	CDC_Transmit_FS((uint8_t*)otg_buff, (uint16_t)strlen(otg_buff));
@@ -500,14 +500,15 @@ void Radio_process(void)
 {
 	if (is_plane()) {
 		uint32_t now = HAL_GetTick();
-		uint32_t timeout_ms = (uint32_t)g_adr_profiles[g_adr.current_tier].ack_timeout_ms * 3;
+		uint32_t timeout_ms = (uint32_t)ADR_GetAckTimeoutMs(g_adr.current_tier) * 2;
 		if (timeout_ms < 1200) {
 			timeout_ms = 1200;
 		}
 		if (g_adr.last_packet_tick == 0) {
 			g_adr.last_packet_tick = now;
 		} else if ((now - g_adr.last_packet_tick) > timeout_ms) {
-			if (g_adr.current_tier < (ADR_PROFILE_COUNT - 1)) {
+			uint8_t max_profiles = (g_adr.mode == ADR_MODE_DYNAMIC_LIMITS) ? ADR_DYNAMIC_PROFILE_COUNT : ADR_PROFILE_COUNT;
+			if (g_adr.current_tier < (max_profiles - 1)) {
 				ADR_ApplyTier(g_adr.current_tier + 1);
 			} else {
 				ADR_ApplyTier(0);

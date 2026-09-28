@@ -37,7 +37,7 @@
 #define LCC68_TXEN_PORT  GPIOB
 #define LCC68_TXEN_PIN   GPIO_PIN_8
 
-#define LORA_FRE         868000000
+#define LORA_FRE         869400000
 #define LORA_PREAMBLE_LENGTH 8
 #define LORA_FIX_LENGTH_PAYLOAD_ON false
 #define LORA_IQ_INVERSION_ON false
