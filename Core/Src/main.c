@@ -107,15 +107,14 @@ void init_all(void)
 {
 	SSD1315_Init(&hi2c3);
 	Menu_Init(&hi2c3, &g_app.gui_data, &g_app.imu_data, &g_app.orientation);
-
 	GY6500_Init(&hi2c3);
 	GY273_Init(&hi2c3);
 	GY6500_Calibrate(&hi2c3, &g_app.imu_calib, 50);
-	PCA9685_Init(&hi2c3, 50.0f);
+	//PCA9685_Init(&hi2c3, 50.0f);
 
 	HAL_TIM_Base_Start_IT(&htim2);
 	if (g_app.is_controller()) {
-		HAL_TIM_Base_Start_IT(&htim3);
+		HAL_TIM_Base_Start_IT(&htim3); //transmit
 	}
 
 	CC1101_InitDevice(&g_app.cc1101, &hspi3);
@@ -163,6 +162,7 @@ int main(void)
 	MX_USART1_UART_Init();
 	/* USER CODE BEGIN 2 */
 	init_all();
+	//SetTxHz(869.4f);
 	MX_USB_DEVICE_Init();
 	/* USER CODE END 2 */
 

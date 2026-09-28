@@ -26,7 +26,7 @@ void Menu_Draw() {
 	{
 		return;
 	}
-	char buff[24];
+	char buff[32];
 	SSD1315_Clear();
 	AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
 	int prev_state = menu_data.data->currentState;
@@ -35,21 +35,21 @@ void Menu_Draw() {
 			SSD1315_Title("[INIT]");
 			break;
 		case STATE_RX_RADIO:
-			sprintf(buff, "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
+			snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)ADR_GetSF(g_adr.current_tier), (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_TX_RADIO:
-			sprintf(buff, "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)g_adr_profiles[g_adr.current_tier].sf_val, (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
+			snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)ADR_GetSF(g_adr.current_tier), (app->is_controller && app->is_controller()) ? "Ctrl" : "Plane");
 			SSD1315_Title(buff);
 			break;
 		case STATE_GYROSCOPE:
-			sprintf(buff, "[GYROSCOPE] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
+			snprintf(buff, sizeof(buff), "[GYROSCOPE] - %s", (app->is_controller && app->is_controller()) ? "Controller" : "Plane");
 			SSD1315_Title(buff);
-			sprintf(buff, "X:%.1fdeg/%.1fm/s2", menu_data.orientation_data->roll_deg, menu_data.imu_data->accel_x);
+			snprintf(buff, sizeof(buff), "X:%.1fdeg/%.1fm/s2", menu_data.orientation_data->roll_deg, menu_data.imu_data->accel_x);
 			SSD1315_Line_1(buff);
-			sprintf(buff, "Y:%.1fdeg/%.1fm/s2", menu_data.orientation_data->pitch_deg, menu_data.imu_data->accel_y);
+			snprintf(buff, sizeof(buff), "Y:%.1fdeg/%.1fm/s2", menu_data.orientation_data->pitch_deg, menu_data.imu_data->accel_y);
 			SSD1315_Line_2(buff);
-			sprintf(buff, "Z:%.1fdeg/%.1fm/s2", menu_data.imu_data->yaw, menu_data.imu_data->accel_z);
+			snprintf(buff, sizeof(buff), "Z:%.1fdeg/%.1fm/s2", menu_data.imu_data->yaw, menu_data.imu_data->accel_z);
 			SSD1315_Line_3(buff);
 			break;
 	}
