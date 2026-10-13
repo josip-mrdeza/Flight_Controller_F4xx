@@ -522,43 +522,8 @@ void Radio_process(void)
 		}
 		else if ((now - g_adr.last_packet_tick) > timeout_ms)
 		{
-			uint8_t max_profiles = (g_adr.mode == ADR_MODE_DYNAMIC_LIMITS) ? ADR_DYNAMIC_PROFILE_COUNT : ADR_PROFILE_COUNT;
-			if (g_adr.has_metrics) {
-				uint8_t ref_tier = ADR_GetReferenceTier();
-				if (g_adr.current_tier != ref_tier) {
-					ADR_ApplyTier(ref_tier);
-					g_adr.consecutive_timeouts = 0;
-					g_adr.last_packet_tick = now;
-					return;
-				}
-			}
-			g_adr.consecutive_timeouts++;
-			if (g_adr.consecutive_timeouts >= 4) {
-				if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
-					if (g_adr.current_tier < (max_profiles - 1)) {
-						ADR_ApplyTier(g_adr.current_tier + 1);
-					} else {
-						LoraOpenRXMode(SX126X_RX_CONTINUOUS);
-					}
-				} else {
-					uint8_t next_sf = g_adr.dyn_sf;
-					uint8_t next_bw = g_adr.dyn_bw_idx;
-					if (next_sf < 12) {
-						next_sf++;
-					} else if (next_bw < 2) {
-						next_bw++;
-					}
-					uint8_t next_tier = ADR_GetDynamicProfileIndex(next_sf, next_bw);
-					if (next_tier != g_adr.current_tier) {
-						ADR_ApplyTier(next_tier);
-					} else {
-						LoraOpenRXMode(SX126X_RX_CONTINUOUS);
-					}
-				}
-				g_adr.consecutive_timeouts = 0;
-			} else {
-				LoraOpenRXMode(SX126X_RX_CONTINUOUS);
-			}
+			ADR_OnTimeout();
+			LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 			g_adr.last_packet_tick = now;
 		}
 	}

@@ -173,7 +173,8 @@ ADR_State_t g_adr = {
     .dyn_bw_idx           = 0,
     .last_rssi            = -80,
     .last_snr             = 5,
-    .has_metrics          = false
+    .has_metrics          = false,
+    .fallback_stage       = 0
 };
 
 uint8_t ADR_GetDynamicProfileIndex(uint8_t sf, uint8_t bw_idx)
@@ -200,6 +201,7 @@ void ADR_Init(void)
     g_adr.last_rssi            = -80;
     g_adr.last_snr             = 5;
     g_adr.has_metrics          = false;
+    g_adr.fallback_stage       = 0;
 }
 
 void ADR_SetMode(ADR_Mode_t mode)
@@ -212,6 +214,7 @@ void ADR_SetMode(ADR_Mode_t mode)
     g_adr.consecutive_timeouts = 0;
     g_adr.dyn_sf = 5;
     g_adr.dyn_bw_idx = 0;
+    g_adr.fallback_stage = 0;
     ADR_ApplyTier(0);
 }
 
@@ -273,13 +276,15 @@ void ADR_ApplyTier(uint8_t tier)
 
 void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
 {
+    bool just_reconnected = (g_adr.fallback_stage > 0) || (g_adr.filtered_rssi == 0 && g_adr.filtered_snr == 0);
     g_adr.last_packet_tick = HAL_GetTick();
     g_adr.consecutive_timeouts = 0;
+    g_adr.fallback_stage = 0;
     g_adr.last_rssi = rssi;
     g_adr.last_snr = snr;
     g_adr.has_metrics = true;
 
-    if (g_adr.filtered_rssi == 0 && g_adr.filtered_snr == 0) {
+    if (just_reconnected) {
         g_adr.filtered_rssi = rssi;
         g_adr.filtered_snr = snr;
     } else {
@@ -304,31 +309,41 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
 
     if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
         uint8_t curr = g_adr.current_tier;
+        uint8_t best_tier = curr;
 
-        if (curr > 0) {
-            const ADR_Profile_t *higher_tier = &g_adr_profiles[curr - 1];
-            if (g_adr.filtered_rssi >= higher_tier->rssi_up && g_adr.filtered_snr >= higher_tier->snr_up) {
-                g_adr.upgrade_cnt++;
-                g_adr.downgrade_cnt = 0;
-                if (g_adr.upgrade_cnt >= 2) {
-                    g_adr.target_tier = curr - 1;
-                    g_adr.upgrade_cnt = 0;
-                }
-                return;
+        for (uint8_t i = 0; i < curr; i++) {
+            if (g_adr.filtered_rssi >= g_adr_profiles[i].rssi_up && g_adr.filtered_snr >= g_adr_profiles[i].snr_up) {
+                best_tier = i;
+                break;
             }
+        }
+
+        if (best_tier < curr) {
+            g_adr.upgrade_cnt++;
+            g_adr.downgrade_cnt = 0;
+            if (just_reconnected || g_adr.upgrade_cnt >= 2) {
+                g_adr.target_tier = best_tier;
+                g_adr.upgrade_cnt = 0;
+            }
+            return;
         }
         g_adr.upgrade_cnt = 0;
 
-        if (curr < (ADR_PROFILE_COUNT - 1)) {
-            const ADR_Profile_t *curr_tier = &g_adr_profiles[curr];
-            if (g_adr.filtered_rssi < curr_tier->rssi_down || g_adr.filtered_snr < curr_tier->snr_down) {
-                g_adr.downgrade_cnt++;
-                if (g_adr.downgrade_cnt >= 2) {
-                    g_adr.target_tier = curr + 1;
-                    g_adr.downgrade_cnt = 0;
-                }
-                return;
+        uint8_t worst_tier = curr;
+        for (int16_t i = (ADR_PROFILE_COUNT - 1); i > curr; i--) {
+            if (g_adr.filtered_rssi < g_adr_profiles[i - 1].rssi_down || g_adr.filtered_snr < g_adr_profiles[i - 1].snr_down) {
+                worst_tier = (uint8_t)i;
+                break;
             }
+        }
+
+        if (worst_tier > curr) {
+            g_adr.downgrade_cnt++;
+            if (g_adr.downgrade_cnt >= 2) {
+                g_adr.target_tier = worst_tier;
+                g_adr.downgrade_cnt = 0;
+            }
+            return;
         }
         g_adr.downgrade_cnt = 0;
     } else {
@@ -344,10 +359,12 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
             if (current_sf < 12) {
                 target_sf = current_sf + 1;
             }
-        } else if (sf_idx > 0) {
-            int8_t lower_sf_limit = sf_demod_limit[sf_idx - 1];
-            if (g_adr.filtered_snr >= (lower_sf_limit + 7) && g_adr.filtered_rssi >= -115) {
-                target_sf = current_sf - 1;
+        } else {
+            for (uint8_t s = 5; s < current_sf; s++) {
+                if (g_adr.filtered_snr >= (sf_demod_limit[s - 5] + 7) && g_adr.filtered_rssi >= -115) {
+                    target_sf = s;
+                    break;
+                }
             }
         }
 
@@ -362,7 +379,9 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
                 target_bw = 0;
             }
         } else if (current_bw == 2) {
-            if (g_adr.filtered_rssi >= -88 && g_adr.filtered_snr >= 0) {
+            if (g_adr.filtered_rssi >= -78 && g_adr.filtered_snr >= 5) {
+                target_bw = 0;
+            } else if (g_adr.filtered_rssi >= -88 && g_adr.filtered_snr >= 0) {
                 target_bw = 1;
             }
         }
@@ -379,7 +398,7 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
             } else {
                 g_adr.upgrade_cnt++;
                 g_adr.downgrade_cnt = 0;
-                if (g_adr.upgrade_cnt >= 2) {
+                if (just_reconnected || g_adr.upgrade_cnt >= 2) {
                     g_adr.target_tier = ADR_GetDynamicProfileIndex(target_sf, target_bw);
                     g_adr.upgrade_cnt = 0;
                 }
@@ -391,46 +410,55 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
     }
 }
 
+static uint8_t ADR_GetNextSlowerTier(uint8_t tier)
+{
+    if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
+        if (tier < (ADR_PROFILE_COUNT - 1)) {
+            return tier + 1;
+        }
+        return tier;
+    } else {
+        const ADR_Profile_t *prof = ADR_GetActiveProfile(tier);
+        uint8_t sf = prof->sf_val;
+        uint8_t bw = (prof->bw == SX126X_LORA_BW_500) ? 0 : ((prof->bw == SX126X_LORA_BW_250) ? 1 : 2);
+        if (sf < 12) {
+            sf+=4;
+        } else if (bw < 2) {
+            bw+=2;
+        }
+        return ADR_GetDynamicProfileIndex(sf, bw);
+    }
+}
+
 void ADR_OnTimeout(void)
 {
     g_adr.upgrade_cnt = 0;
-    g_adr.consecutive_timeouts++;
     g_adr.target_tier = g_adr.current_tier;
 
-    if (g_adr.has_metrics) {
+    if (g_adr.fallback_stage == 0) {
+        g_adr.fallback_stage = 1;
+        g_adr.consecutive_timeouts = 0;
         uint8_t ref_tier = ADR_GetReferenceTier();
-        if (g_adr.current_tier != ref_tier) {
-            ADR_ApplyTier(ref_tier);
-            g_adr.consecutive_timeouts = 0;
-            return;
-        }
+        uint8_t fallback_tier_1 = ADR_GetNextSlowerTier(ref_tier);
+        ADR_ApplyTier(fallback_tier_1);
+        return;
     }
 
-    if (g_adr.consecutive_timeouts >= 4) {
-        if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
-            if (g_adr.current_tier < (ADR_PROFILE_COUNT - 1)) {
-                ADR_ApplyTier(g_adr.current_tier + 1);
-            }
-        } else {
-            uint8_t next_sf = g_adr.dyn_sf;
-            uint8_t next_bw = g_adr.dyn_bw_idx;
-            if (next_sf < 12) {
-                next_sf++;
-            } else if (next_bw < 2) {
-                next_bw++;
-            }
-            uint8_t next_tier = ADR_GetDynamicProfileIndex(next_sf, next_bw);
-            if (next_tier != g_adr.current_tier) {
-                ADR_ApplyTier(next_tier);
-            }
+    g_adr.consecutive_timeouts++;
+    if (g_adr.fallback_stage == 1) {
+        if (g_adr.consecutive_timeouts >= 8) {
+            g_adr.fallback_stage = 2;
+            g_adr.consecutive_timeouts = 0;
+            uint8_t fallback_tier_2 = ADR_GetNextSlowerTier(g_adr.current_tier);
+            ADR_ApplyTier(fallback_tier_2);
         }
-        g_adr.consecutive_timeouts = 0;
     }
 }
 
 void ADR_OnRxSuccess(void)
 {
     g_adr.consecutive_timeouts = 0;
+    g_adr.fallback_stage = 0;
     g_adr.last_packet_tick = HAL_GetTick();
 }
 
