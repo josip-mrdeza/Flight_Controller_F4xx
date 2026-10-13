@@ -42,6 +42,10 @@ typedef struct {
     uint32_t last_packet_tick;
     uint8_t  dyn_sf;
     uint8_t  dyn_bw_idx;
+    int16_t  last_rssi;
+    int8_t   last_snr;
+    bool     has_metrics;
+    uint8_t  fallback_stage;
 } ADR_State_t;
 
 extern ADR_State_t g_adr;
@@ -62,5 +66,7 @@ uint16_t ADR_GetBW_kHz(uint8_t tier);
 const ADR_Profile_t* ADR_GetActiveProfile(uint8_t tier);
 uint16_t ADR_GetAckTimeoutMs(uint8_t tier);
 uint8_t ADR_GetDynamicProfileIndex(uint8_t sf, uint8_t bw_idx);
+uint8_t ADR_GetTierFromMetrics(int16_t rssi, int8_t snr);
+uint8_t ADR_GetReferenceTier(void);
 
 #endif

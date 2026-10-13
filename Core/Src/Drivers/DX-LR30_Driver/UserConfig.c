@@ -258,27 +258,39 @@ void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
 
 	char buff[32];
 	SSD1315_Clear();
-	snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)g_adr.current_tier, (float)ADR_GetSF(g_adr.current_tier), is_controller() ? "Ctrl" : "Plane");
+	snprintf(buff, sizeof(buff), "%uDR/%uSF - %s", (unsigned int)g_adr.current_tier, (unsigned int)ADR_GetSF(g_adr.current_tier), is_controller() ? "Ctrl" : "Plane");
 	SSD1315_Title(buff);
 
-	if (state == STATE_TX_RADIO)
+	snprintf(buff, sizeof(buff), "SF/BW: SF%u/%ukHz", (unsigned int)ADR_GetSF(g_adr.current_tier), (unsigned int)ADR_GetBW_kHz(g_adr.current_tier));
+	SSD1315_Line_1(buff);
+
+	int16_t disp_rssi = (state == STATE_RX_RADIO) ? rssi : g_adr.last_rssi;
+	int8_t disp_snr = (state == STATE_RX_RADIO) ? snr : g_adr.last_snr;
+	bool has_metrics = g_adr.has_metrics || (state == STATE_RX_RADIO);
+
+	if (has_metrics)
 	{
-		snprintf(buff, sizeof(buff), "DtR: %.2f B/s", approxDataTransferSpeed);
-		SSD1315_Line_1(buff);
-		snprintf(buff, sizeof(buff), "BW: %lukHz", (unsigned long)ADR_GetBW_kHz(g_adr.current_tier));
-		SSD1315_Line_2(buff);
-		snprintf(buff, sizeof(buff), "TxDt: %lu ms", lastTransmitDelay);
-		SSD1315_Line_3(buff);
+		snprintf(buff, sizeof(buff), "RSSI/SNR: %ddBm/%ddB", (int)disp_rssi, (int)disp_snr);
+		if (strlen(buff) > 21)
+		{
+			snprintf(buff, sizeof(buff), "RS/SN: %ddBm/%ddB", (int)disp_rssi, (int)disp_snr);
+		}
 	}
 	else
 	{
-		snprintf(buff, sizeof(buff), "Ping:%lums", tick_roundTripPing);
-		SSD1315_Line_1(buff);
-		snprintf(buff, sizeof(buff), "RSSI:%ddbm SN:%ddb", rssi, snr);
-		SSD1315_Line_2(buff);
-		snprintf(buff, sizeof(buff), "BW: %lukHz", (unsigned long)ADR_GetBW_kHz(g_adr.current_tier));
-		SSD1315_Line_3(buff);
+		snprintf(buff, sizeof(buff), "RSSI/SNR: None");
 	}
+	SSD1315_Line_2(buff);
+
+	if(approxDataTransferSpeed > 1100)
+	{
+		snprintf(buff, sizeof(buff), "Ping:%lums DtR:%.2fkB/s", (unsigned long)tick_roundTripPing, (double)approxDataTransferSpeed / 1000.0f);
+	}
+	else
+	{
+		snprintf(buff, sizeof(buff), "Ping:%lums DtR:%.0f B/s", (unsigned long)tick_roundTripPing, (double)approxDataTransferSpeed);
+	}
+	SSD1315_Line_3(buff);
 
 	SSD1315_UpdateScreen(menu_data.hi2c);
 }
@@ -504,15 +516,14 @@ void Radio_process(void)
 		if (timeout_ms < 1200) {
 			timeout_ms = 1200;
 		}
-		if (g_adr.last_packet_tick == 0) {
+		if (g_adr.last_packet_tick == 0)
+		{
 			g_adr.last_packet_tick = now;
-		} else if ((now - g_adr.last_packet_tick) > timeout_ms) {
-			uint8_t max_profiles = (g_adr.mode == ADR_MODE_DYNAMIC_LIMITS) ? ADR_DYNAMIC_PROFILE_COUNT : ADR_PROFILE_COUNT;
-			if (g_adr.current_tier < (max_profiles - 1)) {
-				ADR_ApplyTier(g_adr.current_tier + 1);
-			} else {
-				ADR_ApplyTier(0);
-			}
+		}
+		else if ((now - g_adr.last_packet_tick) > timeout_ms)
+		{
+			ADR_OnTimeout();
+			LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 			g_adr.last_packet_tick = now;
 		}
 	}
