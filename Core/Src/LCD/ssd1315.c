@@ -215,28 +215,28 @@ void SSD1315_DrawChar(uint8_t x, uint8_t y, char c) {
 
 void SSD1315_DrawString(uint8_t x, uint8_t y, const char* str) {
 	while (*str) {
+		if ((x + 5) > SSD1315_WIDTH) break;
 		SSD1315_DrawChar(x, y, *str++);
 		x += 6;
-		if (x > 122) break;
 	}
 }
 
 void SSD1315_Title(const char* str)
 {
-	SSD1315_DrawString(10, 2, str);
+	SSD1315_DrawString(2, 2, str);
 }
 
 void SSD1315_Line_1(const char* str)
 {
-	SSD1315_DrawString(10, 20, str);
+	SSD1315_DrawString(2, 18, str);
 }
 
 void SSD1315_Line_2(const char* str)
 {
-	SSD1315_DrawString(10, 36, str);
+	SSD1315_DrawString(2, 34, str);
 }
 
 void SSD1315_Line_3(const char* str)
 {
-	SSD1315_DrawString(10, 54, str);
+	SSD1315_DrawString(2, 50, str);
 }

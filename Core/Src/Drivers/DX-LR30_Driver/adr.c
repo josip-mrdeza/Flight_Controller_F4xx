@@ -5,6 +5,7 @@
 #include "i2c.h"
 #include "main.h"
 #include <stdio.h>
+#include <string.h>
 
 const ADR_Profile_t g_adr_profiles[ADR_PROFILE_COUNT] = {
     {
@@ -169,7 +170,10 @@ ADR_State_t g_adr = {
     .tier_changed         = false,
     .last_packet_tick     = 0,
     .dyn_sf               = 5,
-    .dyn_bw_idx           = 0
+    .dyn_bw_idx           = 0,
+    .last_rssi            = -80,
+    .last_snr             = 5,
+    .has_metrics          = false
 };
 
 uint8_t ADR_GetDynamicProfileIndex(uint8_t sf, uint8_t bw_idx)
@@ -193,6 +197,9 @@ void ADR_Init(void)
     g_adr.last_packet_tick     = HAL_GetTick();
     g_adr.dyn_sf               = 5;
     g_adr.dyn_bw_idx           = 0;
+    g_adr.last_rssi            = -80;
+    g_adr.last_snr             = 5;
+    g_adr.has_metrics          = false;
 }
 
 void ADR_SetMode(ADR_Mode_t mode)
@@ -260,17 +267,7 @@ void ADR_ApplyTier(uint8_t tier)
     LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 
     if (tier_actually_changed && !display_off) {
-        char buff[32];
-        SSD1315_Clear();
-        snprintf(buff, sizeof(buff), "%.0fDR/%.0fSF - %s", (float)tier, (float)prof->sf_val, is_controller() ? "Ctrl" : "Plane");
-        SSD1315_Title(buff);
-        snprintf(buff, sizeof(buff), "SF: SF%d", prof->sf_val);
-        SSD1315_Line_1(buff);
-        snprintf(buff, sizeof(buff), "BW: %lukHz", prof->bw_hz / 1000);
-        SSD1315_Line_2(buff);
-        snprintf(buff, sizeof(buff), "Role: %s", is_controller() ? "Controller" : "Plane");
-        SSD1315_Line_3(buff);
-        SSD1315_UpdateScreen(&hi2c3);
+    	UpdateMenuADR(STATE_RX_RADIO, g_adr.last_rssi, g_adr.last_snr);
     }
 }
 
@@ -278,6 +275,9 @@ void ADR_ProcessRxMetrics(int16_t rssi, int8_t snr, uint8_t remote_dr)
 {
     g_adr.last_packet_tick = HAL_GetTick();
     g_adr.consecutive_timeouts = 0;
+    g_adr.last_rssi = rssi;
+    g_adr.last_snr = snr;
+    g_adr.has_metrics = true;
 
     if (g_adr.filtered_rssi == 0 && g_adr.filtered_snr == 0) {
         g_adr.filtered_rssi = rssi;
@@ -397,7 +397,16 @@ void ADR_OnTimeout(void)
     g_adr.consecutive_timeouts++;
     g_adr.target_tier = g_adr.current_tier;
 
-    if (g_adr.consecutive_timeouts >= 2) {
+    if (g_adr.has_metrics) {
+        uint8_t ref_tier = ADR_GetReferenceTier();
+        if (g_adr.current_tier != ref_tier) {
+            ADR_ApplyTier(ref_tier);
+            g_adr.consecutive_timeouts = 0;
+            return;
+        }
+    }
+
+    if (g_adr.consecutive_timeouts >= 4) {
         if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
             if (g_adr.current_tier < (ADR_PROFILE_COUNT - 1)) {
                 ADR_ApplyTier(g_adr.current_tier + 1);
@@ -411,7 +420,9 @@ void ADR_OnTimeout(void)
                 next_bw++;
             }
             uint8_t next_tier = ADR_GetDynamicProfileIndex(next_sf, next_bw);
-            ADR_ApplyTier(next_tier);
+            if (next_tier != g_adr.current_tier) {
+                ADR_ApplyTier(next_tier);
+            }
         }
         g_adr.consecutive_timeouts = 0;
     }
@@ -446,4 +457,39 @@ uint16_t ADR_GetBW_kHz(uint8_t tier)
 uint16_t ADR_GetAckTimeoutMs(uint8_t tier)
 {
     return ADR_GetActiveProfile(tier)->ack_timeout_ms;
+}
+
+uint8_t ADR_GetTierFromMetrics(int16_t rssi, int8_t snr)
+{
+    if (g_adr.mode == ADR_MODE_PRESET_TIERS) {
+        for (uint8_t i = 0; i < (ADR_PROFILE_COUNT - 1); i++) {
+            if (rssi >= g_adr_profiles[i].rssi_down && snr >= g_adr_profiles[i].snr_down) {
+                return i;
+            }
+        }
+        return (ADR_PROFILE_COUNT - 1);
+    } else {
+        uint8_t sf = 12;
+        for (uint8_t i = 0; i < 7; i++) {
+            if (snr >= (sf_demod_limit[i] + 3) && rssi > -120) {
+                sf = 5 + i;
+                break;
+            }
+        }
+        uint8_t bw = 2;
+        if (rssi >= -78 && snr >= 5) {
+            bw = 0;
+        } else if (rssi >= -95 && snr >= -4) {
+            bw = 1;
+        }
+        return ADR_GetDynamicProfileIndex(sf, bw);
+    }
+}
+
+uint8_t ADR_GetReferenceTier(void)
+{
+    if (!g_adr.has_metrics) {
+        return ADR_DEFAULT_PROFILE;
+    }
+    return ADR_GetTierFromMetrics(g_adr.last_rssi, g_adr.last_snr);
 }
