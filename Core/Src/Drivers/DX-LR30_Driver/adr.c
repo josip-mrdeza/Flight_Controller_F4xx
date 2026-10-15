@@ -119,14 +119,14 @@ const ADR_Profile_t g_adr_profiles[ADR_PROFILE_COUNT] = {
 };
 
 const ADR_Profile_t g_dynamic_profiles[ADR_DYNAMIC_PROFILE_COUNT] = {
-    { .sf = SX126X_LORA_SF5,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 5,  .ack_timeout_ms = 120 },
-    { .sf = SX126X_LORA_SF6,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 6,  .ack_timeout_ms = 180 },
-    { .sf = SX126X_LORA_SF7,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 7,  .ack_timeout_ms = 250 },
+    { .sf = SX126X_LORA_SF5,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 5,  .ack_timeout_ms = 100 },
+    { .sf = SX126X_LORA_SF6,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 6,  .ack_timeout_ms = 230 },
+    { .sf = SX126X_LORA_SF7,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 7,  .ack_timeout_ms = 270 },
     { .sf = SX126X_LORA_SF8,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 8,  .ack_timeout_ms = 450 },
     { .sf = SX126X_LORA_SF9,  .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 9,  .ack_timeout_ms = 800 },
     { .sf = SX126X_LORA_SF10, .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 10, .ack_timeout_ms = 1500 },
-    { .sf = SX126X_LORA_SF11, .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 11, .ack_timeout_ms = 2800 },
-    { .sf = SX126X_LORA_SF12, .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 12, .ack_timeout_ms = 5000 },
+    { .sf = SX126X_LORA_SF11, .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 11, .ack_timeout_ms = 2000 },
+    { .sf = SX126X_LORA_SF12, .bw = SX126X_LORA_BW_500, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 500000, .sf_val = 12, .ack_timeout_ms = 3000 },
 
     { .sf = SX126X_LORA_SF5,  .bw = SX126X_LORA_BW_250, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 250000, .sf_val = 5,  .ack_timeout_ms = 180 },
     { .sf = SX126X_LORA_SF6,  .bw = SX126X_LORA_BW_250, .cr = SX126X_LORA_CR_4_5, .rssi_up = 0, .snr_up = 0, .rssi_down = 0, .snr_down = 0, .bw_hz = 250000, .sf_val = 6,  .ack_timeout_ms = 250 },
@@ -422,9 +422,17 @@ static uint8_t ADR_GetNextSlowerTier(uint8_t tier)
         uint8_t sf = prof->sf_val;
         uint8_t bw = (prof->bw == SX126X_LORA_BW_500) ? 0 : ((prof->bw == SX126X_LORA_BW_250) ? 1 : 2);
         if (sf < 12) {
-            sf+=4;
+            if (sf + 4 > 12) {
+                sf = 12;
+            } else {
+                sf += 4;
+            }
         } else if (bw < 2) {
-            bw+=2;
+            if (bw + 2 > 2) {
+                bw = 2;
+            } else {
+                bw += 2;
+            }
         }
         return ADR_GetDynamicProfileIndex(sf, bw);
     }
@@ -435,18 +443,20 @@ void ADR_OnTimeout(void)
     g_adr.upgrade_cnt = 0;
     g_adr.target_tier = g_adr.current_tier;
 
+    g_adr.consecutive_timeouts++;
     if (g_adr.fallback_stage == 0) {
-        g_adr.fallback_stage = 1;
-        g_adr.consecutive_timeouts = 0;
-        uint8_t ref_tier = ADR_GetReferenceTier();
-        uint8_t fallback_tier_1 = ADR_GetNextSlowerTier(ref_tier);
-        ADR_ApplyTier(fallback_tier_1);
+        if (g_adr.consecutive_timeouts >= 2) {
+            g_adr.fallback_stage = 1;
+            g_adr.consecutive_timeouts = 0;
+            uint8_t ref_tier = ADR_GetReferenceTier();
+            uint8_t fallback_tier_1 = ADR_GetNextSlowerTier(ref_tier);
+            ADR_ApplyTier(fallback_tier_1);
+        }
         return;
     }
 
-    g_adr.consecutive_timeouts++;
     if (g_adr.fallback_stage == 1) {
-        if (g_adr.consecutive_timeouts >= 8) {
+        if (g_adr.consecutive_timeouts >= 4) {
             g_adr.fallback_stage = 2;
             g_adr.consecutive_timeouts = 0;
             uint8_t fallback_tier_2 = ADR_GetNextSlowerTier(g_adr.current_tier);

@@ -42,6 +42,9 @@ void SSD1315_Title(const char* str);
 void SSD1315_Line_1(const char* str);
 void SSD1315_Line_2(const char* str);
 void SSD1315_Line_3(const char* str);
+void SSD1315_ClearLine(uint8_t line);
+void SSD1315_ClearArea(uint8_t x, uint8_t y, uint8_t w, uint8_t h);
+void SSD1315_UpdateLine(I2C_HandleTypeDef *hi2c, uint8_t line);
 void Menu_HandleButtonClick(AppData_t *data);
 void Menu_HandleButtonEncoder(AppData_t *data);
 
