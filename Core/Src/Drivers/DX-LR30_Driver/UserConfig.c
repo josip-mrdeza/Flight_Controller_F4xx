@@ -9,6 +9,7 @@
 #include "Drivers/DX-LR30_Driver/sx126x.h"
 #include "Drivers/DX-LR30_Driver/sx126x_hal.h"
 #include "Drivers/DX-LR30_Driver/adr.h"
+#include "Drivers/DX-LR30_Driver/lora_telemetry.h"
 #include <string.h>
 #include <stdlib.h>
 #include "LCD/menu_helper.h"
@@ -24,6 +25,7 @@ volatile uint32_t tickTransmitEnd = 0;
 volatile uint8_t lastTransmitLength = 0;
 volatile uint32_t tick_roundTripPing = 0;
 volatile float approxDataTransferSpeed = 0;
+RadioMetricsStorage_t g_radio_metrics = {0};
 volatile uint8_t IrqFired = 0;
 sx126x_rx_buffer_status_t offset = {0};
 sx126x_pkt_status_lora_t RadioPktStatus;
@@ -126,7 +128,7 @@ void LoraInit(void)
 
 	sx126x_set_dio_irq_params(NULL, SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE, SX126X_IRQ_RX_DONE | SX126X_IRQ_TX_DONE, SX126X_IRQ_NONE, SX126X_IRQ_NONE);
 	sx126x_clear_irq_status(NULL, SX126X_IRQ_ALL);
-	sx126x_set_tx_params(NULL, 22, SX126X_RAMP_3400_US);
+	sx126x_set_tx_params(NULL, 22, SX126X_RAMP_1700_US);
 	sx126x_write_register(NULL, 0x08E7, (uint8_t[]){0x38}, 1);
 
 	sx126x_set_rf_freq(NULL, LORA_FRE);
@@ -219,7 +221,8 @@ void OnTxDone(void)
 	g_lora_tx_done = true;
 	g_lora_test_rxs = true;
 	tickTransmitEnd = HAL_GetTick();
-	lastTransmitDelay = tickTransmitEnd - tickTransmitStart;
+	lastTransmitDelay = (uint32_t)((float) tickTransmitEnd - (float) tickTransmitStart - 1.5f);
+	g_adr.last_tx_time_ts_ms = lastTransmitDelay;
 	approxDataTransferSpeed = lastTransmitLength / (lastTransmitDelay / 1000.0f);
 
 	if (is_plane()) {
@@ -232,7 +235,7 @@ void OnTxDone(void)
 	} else {
 		LoraOpenRXMode(SX126X_RX_CONTINUOUS);
 		menu_data.waiting_ack = 1;
-		htim4.Instance->ARR = ADR_GetAckTimeoutMs(g_adr.current_tier) * 2;
+		htim4.Instance->ARR = ADR_GetAckTimeoutMs(g_adr.current_tier);
 		htim4.Instance->CNT = 0;
 		HAL_TIM_Base_Start_IT(&htim4);
 	}
@@ -243,7 +246,7 @@ void OnTxDone(void)
 
 void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
 {
-	if (display_off && !is_plane())
+	if (display_off)
 	{
 		return;
 	}
@@ -256,43 +259,102 @@ void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr)
 	}
 	last_draw_tick = now;
 
+	static int last_menu_state = -1;
+	bool force_redraw = false;
+
+	if (menu_data.data != NULL && menu_data.data->currentState != last_menu_state)
+	{
+		last_menu_state = menu_data.data->currentState;
+		force_redraw = true;
+	}
+
+	if (!g_radio_metrics.initialized)
+	{
+		force_redraw = true;
+		g_radio_metrics.initialized = true;
+	}
+
+	g_radio_metrics.current.tier = g_adr.current_tier;
+	g_radio_metrics.current.is_ctrl = is_controller() ? 1 : 0;
+	g_radio_metrics.current.rssi = (state == STATE_RX_RADIO) ? rssi : g_adr.last_rssi;
+	g_radio_metrics.current.snr = (state == STATE_RX_RADIO) ? snr : g_adr.last_snr;
+	g_radio_metrics.current.has_metrics = g_adr.has_metrics || (state == STATE_RX_RADIO);
+	g_radio_metrics.current.ping_ms = tick_roundTripPing;
+	g_radio_metrics.current.speed_bps = (uint32_t)approxDataTransferSpeed;
+
 	char buff[32];
-	SSD1315_Clear();
-	snprintf(buff, sizeof(buff), "%uDR/%uSF - %s", (unsigned int)g_adr.current_tier, (unsigned int)ADR_GetSF(g_adr.current_tier), is_controller() ? "Ctrl" : "Plane");
-	SSD1315_Title(buff);
 
-	snprintf(buff, sizeof(buff), "SF/BW: SF%u/%ukHz", (unsigned int)ADR_GetSF(g_adr.current_tier), (unsigned int)ADR_GetBW_kHz(g_adr.current_tier));
-	SSD1315_Line_1(buff);
-
-	int16_t disp_rssi = (state == STATE_RX_RADIO) ? rssi : g_adr.last_rssi;
-	int8_t disp_snr = (state == STATE_RX_RADIO) ? snr : g_adr.last_snr;
-	bool has_metrics = g_adr.has_metrics || (state == STATE_RX_RADIO);
-
-	if (has_metrics)
+	if (force_redraw ||
+	    g_radio_metrics.current.tier != g_radio_metrics.last.tier ||
+	    g_radio_metrics.current.is_ctrl != g_radio_metrics.last.is_ctrl || true)
 	{
-		snprintf(buff, sizeof(buff), "RSSI/SNR: %ddBm/%ddB", (int)disp_rssi, (int)disp_snr);
-		if (strlen(buff) > 21)
+		SSD1315_ClearLine(0);
+		snprintf(buff, sizeof(buff), "%s - TTS:%ums",
+		         g_radio_metrics.current.is_ctrl ? "Ctrl" : "Plane",
+		        		 (unsigned int) g_adr.last_tx_time_ts_ms);
+		SSD1315_Title(buff);
+		SSD1315_UpdateLine(menu_data.hi2c, 0);
+	}
+
+	if (force_redraw ||
+	    g_radio_metrics.current.tier != g_radio_metrics.last.tier)
+	{
+		SSD1315_ClearLine(1);
+		snprintf(buff, sizeof(buff), "SF/BW: SF%u/%ukHz",
+		         (unsigned int)ADR_GetSF(g_radio_metrics.current.tier),
+		         (unsigned int)ADR_GetBW_kHz(g_radio_metrics.current.tier));
+		SSD1315_Line_1(buff);
+		SSD1315_UpdateLine(menu_data.hi2c, 1);
+	}
+
+	if (force_redraw ||
+	    g_radio_metrics.current.rssi != g_radio_metrics.last.rssi ||
+	    g_radio_metrics.current.snr != g_radio_metrics.last.snr ||
+	    g_radio_metrics.current.has_metrics != g_radio_metrics.last.has_metrics)
+	{
+		SSD1315_ClearLine(2);
+		if (g_radio_metrics.current.has_metrics)
 		{
-			snprintf(buff, sizeof(buff), "RS/SN: %ddBm/%ddB", (int)disp_rssi, (int)disp_snr);
+			snprintf(buff, sizeof(buff), "RSSI/SNR: %ddBm/%ddB",
+			         (int)g_radio_metrics.current.rssi,
+			         (int)g_radio_metrics.current.snr);
+			if (strlen(buff) > 21)
+			{
+				snprintf(buff, sizeof(buff), "RS/SN: %ddBm/%ddB",
+				         (int)g_radio_metrics.current.rssi,
+				         (int)g_radio_metrics.current.snr);
+			}
 		}
+		else
+		{
+			snprintf(buff, sizeof(buff), "RSSI/SNR: None");
+		}
+		SSD1315_Line_2(buff);
+		SSD1315_UpdateLine(menu_data.hi2c, 2);
 	}
-	else
-	{
-		snprintf(buff, sizeof(buff), "RSSI/SNR: None");
-	}
-	SSD1315_Line_2(buff);
 
-	if(approxDataTransferSpeed > 1100)
+	if (force_redraw ||
+	    g_radio_metrics.current.ping_ms != g_radio_metrics.last.ping_ms ||
+	    g_radio_metrics.current.speed_bps != g_radio_metrics.last.speed_bps)
 	{
-		snprintf(buff, sizeof(buff), "Ping:%lums DtR:%.2fkB/s", (unsigned long)tick_roundTripPing, (double)approxDataTransferSpeed / 1000.0f);
+		SSD1315_ClearLine(3);
+		if (g_radio_metrics.current.speed_bps > 1100)
+		{
+			snprintf(buff, sizeof(buff), "Ping:%lums DtR:%.2fkB/s",
+			         (unsigned long)g_radio_metrics.current.ping_ms,
+			         (double)g_radio_metrics.current.speed_bps / 1000.0f);
+		}
+		else
+		{
+			snprintf(buff, sizeof(buff), "Ping:%lums DtR:%lu B/s",
+			         (unsigned long)g_radio_metrics.current.ping_ms,
+			         (unsigned long)g_radio_metrics.current.speed_bps);
+		}
+		SSD1315_Line_3(buff);
+		SSD1315_UpdateLine(menu_data.hi2c, 3);
 	}
-	else
-	{
-		snprintf(buff, sizeof(buff), "Ping:%lums DtR:%.0f B/s", (unsigned long)tick_roundTripPing, (double)approxDataTransferSpeed);
-	}
-	SSD1315_Line_3(buff);
 
-	SSD1315_UpdateScreen(menu_data.hi2c);
+	g_radio_metrics.last = g_radio_metrics.current;
 }
 
 void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
@@ -306,12 +368,7 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 		menu_data.waiting_ack = 0;
 	}
 
-	uint8_t remote_dr = g_adr.current_tier;
-	char *pdr = strstr((char*)payload, "dr");
-	if (pdr) {
-		remote_dr = (uint8_t)strtol(pdr + 2, NULL, 10);
-	}
-
+	uint8_t remote_dr = Lora_ExtractRemoteDataRate(payload, size, g_adr.current_tier);
 	ADR_ProcessRxMetrics(rssi, snr, remote_dr);
 
 	if (is_controller()) {
@@ -324,26 +381,11 @@ void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr)
 	UpdateMenuADR(STATE_RX_RADIO, rssi, snr);
 
 	char otg_buff[512];
-	uint16_t copy_len = size;
-	while (copy_len > 0 && (payload[copy_len - 1] == '\r' || payload[copy_len - 1] == '\n' || payload[copy_len - 1] == ' ' || payload[copy_len - 1] == '\0')) {
-		copy_len--;
+	uint16_t otg_len = Lora_StructureRxReport(otg_buff, sizeof(otg_buff), payload, size,
+	                                         rssi, snr, g_adr.current_tier, &g_app);
+	if (otg_len > 0) {
+		CDC_Transmit_FS((uint8_t*)otg_buff, otg_len);
 	}
-	if (copy_len > sizeof(otg_buff) - 128) {
-		copy_len = sizeof(otg_buff) - 128;
-	}
-	memcpy(otg_buff, payload, copy_len);
-	otg_buff[copy_len] = '\0';
-
-	char append_buff[128];
-	float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : 45.815024f;
-	float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
-	float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
-
-	snprintf(append_buff, sizeof(append_buff), ";rs%d;sn%d;dr%d;sf%d;bw%u;clt%.6f;clo%.6f;cal%.1f;\r\n",
-	         rssi, snr, g_adr.current_tier, ADR_GetSF(g_adr.current_tier), ADR_GetBW_kHz(g_adr.current_tier), clt, clo, cal);
-	strncat(otg_buff, append_buff, sizeof(otg_buff) - strlen(otg_buff) - 1);
-
-	CDC_Transmit_FS((uint8_t*)otg_buff, (uint16_t)strlen(otg_buff));
 }
 
 void RxError(void)
@@ -390,49 +432,23 @@ void Data_Processing(void)
 #if !TEST
 		AppContext_t *app = container_of(menu_data.data, AppContext_t, gui_data);
 		char buff[256];
+		uint16_t len = 0;
+
 		if(app->is_controller && app->is_controller())
 		{
-			float clt = g_app.gps.data.is_valid ? g_app.gps.data.latitude : 45.815024f;
-			float clo = g_app.gps.data.is_valid ? g_app.gps.data.longitude : 15.981940f;
-			float cal = g_app.gps.data.is_valid ? g_app.gps.data.altitude : 135.0f;
-
-			snprintf(buff, sizeof(buff), "ctrl;dr%d;clt%.6f;clo%.6f;cal%.1f;\r\n",
-			         g_adr.target_tier, clt, clo, cal);
-			CDC_Transmit_FS((uint8_t*)buff, (uint16_t)strlen(buff));
+			len = Lora_StructureControllerPacket(buff, sizeof(buff), g_adr.target_tier, app);
+			CDC_Transmit_FS((uint8_t*)buff, len);
 		}
 		else
 		{
-			float lat = g_app.gps.data.is_valid ? g_app.gps.data.latitude : -1.0f;
-			float lon = g_app.gps.data.is_valid ? g_app.gps.data.longitude : -1.0f;
-			float alt = g_app.gps.data.is_valid ? g_app.gps.data.altitude : -1.0f;
-			uint8_t sats = g_app.gps.data.satellites;
-
-			snprintf(buff, sizeof(buff),
-					"idRaptorx0;dr%d;"
-					"lt%.6f;lo%.6f;al%.1f;sa%d;"
-					"vx%.2f;vy%.2f;vz%.2f;"
-					"ax%.2f;ay%.2f;az%.2f;"
-					"gx%.2f;gy%.2f;gz%.2f;hd%.2f;"
-					"tm%.1f;pr%.2f;"
-					"vb%.2f;ib%.2f;"
-					"vs%.2f;is%.2f;\r\n",
-					g_adr.target_tier,
-					lat, lon, alt, sats,
-					g_app.imu_data.vel_x, g_app.imu_data.vel_y, g_app.imu_data.vel_z,
-					g_app.imu_data.accel_x, g_app.imu_data.accel_y, g_app.imu_data.accel_z,
-					g_app.orientation.roll_deg != 0.0f ? g_app.orientation.roll_deg : g_app.imu_data.roll,
-					g_app.orientation.pitch_deg != 0.0f ? g_app.orientation.pitch_deg : g_app.imu_data.pitch,
-					g_app.imu_data.yaw,
-					g_app.heading_3d != 0.0f ? g_app.heading_3d : g_app.heading_2d,
-					g_app.imu_data.temp != 0.0f ? g_app.imu_data.temp : -1.0f,
-					-1.0f,
-					-1.0f, -1.0f,
-					-1.0f, -1.0f);
+			len = Lora_StructurePlanePacket(buff, sizeof(buff), g_adr.target_tier, app);
 		}
-		tickTransmitStart = HAL_GetTick();
-		uint8_t len = (uint8_t) strlen(buff);
-		lastTransmitLength = len;
-		LoraDataSend((uint8_t *)buff, len);
+
+		if (len > 0) {
+			tickTransmitStart = HAL_GetTick();
+			lastTransmitLength = (uint8_t)len;
+			LoraDataSend((uint8_t *)buff, (uint8_t)len);
+		}
 #else
 		uint8_t mydata[SIZE_DATA] = {0};
 		uint8_t len = queueDequeue(pUart1RxQueue, &mydata);
@@ -512,10 +528,7 @@ void Radio_process(void)
 {
 	if (is_plane()) {
 		uint32_t now = HAL_GetTick();
-		uint32_t timeout_ms = (uint32_t)ADR_GetAckTimeoutMs(g_adr.current_tier) * 2;
-		if (timeout_ms < 1200) {
-			timeout_ms = 1200;
-		}
+		uint32_t timeout_ms = (uint32_t)ADR_GetAckTimeoutMs(g_adr.current_tier)*5;
 		if (g_adr.last_packet_tick == 0)
 		{
 			g_adr.last_packet_tick = now;

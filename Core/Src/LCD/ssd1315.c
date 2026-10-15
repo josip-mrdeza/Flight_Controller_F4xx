@@ -59,6 +59,7 @@ void SSD1315_Clear(void) {
 }
 
 void SSD1315_UpdateScreen(I2C_HandleTypeDef *hi2c) {
+	if (hi2c == NULL) return;
 	static uint8_t page_cmd[3];
 	for (uint8_t i = 0; i < 8; i++) {
 		page_cmd[0] = 0xB0 + i;
@@ -239,4 +240,33 @@ void SSD1315_Line_2(const char* str)
 void SSD1315_Line_3(const char* str)
 {
 	SSD1315_DrawString(2, 50, str);
+}
+
+void SSD1315_ClearLine(uint8_t line)
+{
+	if (line > 3) return;
+	memset(&SSD1315_Buffer[line * 256], 0x00, 256);
+}
+
+void SSD1315_ClearArea(uint8_t x, uint8_t y, uint8_t w, uint8_t h)
+{
+	for (uint8_t py = y; py < y + h; py++) {
+		for (uint8_t px = x; px < x + w; px++) {
+			SSD1315_DrawPixel(px, py, 0);
+		}
+	}
+}
+
+void SSD1315_UpdateLine(I2C_HandleTypeDef *hi2c, uint8_t line)
+{
+	if (line > 3 || hi2c == NULL) return;
+	static uint8_t page_cmd[3];
+	uint8_t start_page = line * 2;
+	for (uint8_t i = start_page; i < start_page + 2; i++) {
+		page_cmd[0] = 0xB0 + i;
+		page_cmd[1] = 0x00;
+		page_cmd[2] = 0x10;
+		I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x00, 1, page_cmd, 3, 50);
+		I2C_Mem_Write_DMA(hi2c, SSD1315_I2C_ADDR, 0x40, 1, &SSD1315_Buffer[SSD1315_WIDTH * i], SSD1315_WIDTH, 50);
+	}
 }

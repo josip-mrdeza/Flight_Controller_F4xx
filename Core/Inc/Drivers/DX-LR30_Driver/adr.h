@@ -46,6 +46,7 @@ typedef struct {
     int8_t   last_snr;
     bool     has_metrics;
     uint8_t  fallback_stage;
+    uint32_t last_tx_time_ts_ms;
 } ADR_State_t;
 
 extern ADR_State_t g_adr;

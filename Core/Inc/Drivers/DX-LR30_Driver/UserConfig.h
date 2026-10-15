@@ -76,6 +76,8 @@ uint32_t SX126x_BW_Hz(uint8_t bw);
 uint32_t SX126x_TimeoutMs_To_Symbols(uint32_t timeout_ms);
 
 void Data_Processing(void);
+static inline void DataProcessing(void) { Data_Processing(); }
+void OnRxDone(uint8_t* payload, uint16_t size, int16_t rssi, int8_t snr);
 void LoraInit(void);
 HAL_StatusTypeDef DX_LR30_Init(void);
 _Bool DX_LR30_Ping(void);
@@ -89,5 +91,23 @@ void UpdateMenuADR(uint8_t state, int16_t rssi, int8_t snr);
 
 RadioOperatingModes_t sx1262GetOperatingMode(void);
 void sx1262SetOperatingMode(RadioOperatingModes_t mode);
+
+typedef struct {
+	uint8_t tier;
+	uint8_t is_ctrl;
+	int16_t rssi;
+	int8_t snr;
+	bool has_metrics;
+	uint32_t ping_ms;
+	uint32_t speed_bps;
+} RadioMetrics_t;
+
+typedef struct {
+	RadioMetrics_t current;
+	RadioMetrics_t last;
+	bool initialized;
+} RadioMetricsStorage_t;
+
+extern RadioMetricsStorage_t g_radio_metrics;
 
 #endif
